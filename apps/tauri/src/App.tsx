@@ -1,87 +1,22 @@
-import { MainLayout, VMListSidebar, VMWizard, VMDetailView, DisplayControl } from '@openutm/ui';
 import { useState } from 'react';
 import './App.css';
-import type { VM } from '@openutm/shared-types';
-import { VMStatus } from '@openutm/shared-types';
 
 function App() {
-  const [selectedVM, setSelectedVM] = useState<string | null>(null);
-  const [showWizard, setShowWizard] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
-  const mockVMs = [
-    { id: '1', name: 'Ubuntu VM', status: VMStatus.Running, os: 'Linux' },
-    { id: '2', name: 'Windows VM', status: VMStatus.Stopped, os: 'Windows' },
-  ];
-
-  const mockVM: VM = {
-    id: selectedVM || '1',
-    name: 'Test VM',
-    status: VMStatus.Running,
-    config: {
-      cpu: 2,
-      memory: 4096,
-      disks: [],
-      network: { type: 'nat' },
-    },
-  };
-
-  const handleCreateVM = () => {
-    setShowWizard(true);
-  };
-
-  const handleSelectVM = (id: string) => {
-    setSelectedVM(id);
-  };
-
-  const handleWizardComplete = () => {
-    setShowWizard(false);
-  };
-
-  const handleContextMenu = (id: string, action: 'start' | 'stop' | 'delete') => {
-    console.log(`Action ${action} on VM ${id}`);
-  };
+  const [count, setCount] = useState(0);
 
   return (
-    <MainLayout
-      sidebar={
-        <VMListSidebar
-          vms={mockVMs}
-          selectedId={selectedVM || undefined}
-          onSelect={handleSelectVM}
-          onContextMenu={handleContextMenu}
-        />
-      }
-      toolbar={
-        <div style={{ display: 'flex', gap: '10px', padding: '10px' }}>
-          <button onClick={() => console.log('Start')}>Start</button>
-          <button onClick={() => console.log('Stop')}>Stop</button>
-          <button onClick={() => console.log('Pause')}>Pause</button>
-        </div>
-      }
-      isDarkMode={isDarkMode}
-      onThemeToggle={() => setIsDarkMode(!isDarkMode)}
-    >
-      {showWizard ? (
-        <VMWizard onComplete={handleWizardComplete} onCancel={() => setShowWizard(false)} />
-      ) : selectedVM ? (
-        <VMDetailView 
-          vm={mockVM}
-          onUpdateConfig={(id, config) => console.log('Update', id, config)}
-          onAction={(id, action) => console.log('Action', id, action)}
-          onDelete={(id) => console.log('Delete', id)}
-        />
-      ) : (
-        <div style={{ padding: '20px', textAlign: 'center' }}>
-          <h2>Select a VM or create a new one</h2>
-          <button onClick={handleCreateVM}>Create VM</button>
-        </div>
-      )}
-      <DisplayControl 
-        onOpenDisplay={() => console.log('Open display')}
-        status={mockVMs.find(v => v.id === selectedVM)?.status || VMStatus.Stopped}
-      />
-    </MainLayout>
+    <main className="container">
+      <h1>OpenUTM (Tauri)</h1>
+      <p>Cross-platform hypervisor</p>
+
+      <div className="row">
+        <button onClick={() => setCount((c) => c + 1)}>
+          count is {count}
+        </button>
+      </div>
+
+      <p>VM Management UI coming soon...</p>
+    </main>
   );
 }
 
