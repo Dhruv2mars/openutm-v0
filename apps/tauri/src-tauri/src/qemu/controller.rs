@@ -27,7 +27,7 @@ impl QemuController {
         vm_id: &str,
         qemu_args: Vec<String>,
         qmp_socket: Option<String>,
-    ) -> Result<VMHandle> {
+    ) -> Result<u32> {
         use std::process::Command;
 
         let mut cmd = Command::new(&self.qemu_path);
@@ -46,9 +46,9 @@ impl QemuController {
         self.running_vms
             .lock()
             .unwrap()
-            .insert(vm_id.to_string(), handle.clone());
+            .insert(vm_id.to_string(), handle);
 
-        Ok(handle)
+        Ok(pid)
     }
 
     pub async fn stop_vm(&mut self, vm_id: &str) -> Result<()> {
@@ -93,12 +93,6 @@ impl QemuController {
     }
 }
 
-impl Clone for VMHandle {
-    fn clone(&self) -> Self {
-        panic!("VMHandle cannot be cloned - contains Child process");
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,9 +112,8 @@ mod tests {
             .await;
         
         match result {
-            Ok(handle) => {
-                assert_eq!(handle.vm_id, "vm-test-1");
-                assert!(handle.pid > 0);
+            Ok(pid) => {
+                assert!(pid > 0);
             }
             Err(e) => {
                 eprintln!("Error: {:?}", e);
@@ -142,13 +135,8 @@ mod tests {
             .await;
         
         match result {
-            Ok(handle) => {
-                assert_eq!(handle.vm_id, "vm-test-2");
-                assert!(handle.qmp_socket.is_some());
-                assert_eq!(
-                    handle.qmp_socket.as_ref().unwrap(),
-                    "/tmp/qmp-vm-test-2.sock"
-                );
+            Ok(pid) => {
+                assert!(pid > 0);
             }
             Err(e) => {
                 eprintln!("Error: {:?}", e);
