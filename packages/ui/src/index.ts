@@ -9,3 +9,6 @@ export { VMListSidebar, type VMListItem, type VMListSidebarProps } from './VMLis
 export { default as VMWizard, type VMConfig, type VMWizardProps } from './VMWizard';
 export { VMDetailView, type VMDetailViewProps } from './VMDetailView';
 export { DisplayControl } from './DisplayControl';
+export { QemuSetupWizard, type QemuSetupWizardProps, type QemuDetectionResult } from './QemuSetupWizard';
+export { ErrorBoundary } from './ErrorBoundary';
+export { ToastProvider, useToast, type Toast, type ToastType } from './Toast';
