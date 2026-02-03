@@ -4,3 +4,8 @@ export { Input } from './Input';
 export { Select, type SelectOption } from './Select';
 export { VMStatusBadge, type VMStatus } from './VMStatusBadge';
 export { ResourceBar } from './ResourceBar';
+export { default as MainLayout } from './MainLayout';
+export { VMListSidebar, type VMListItem, type VMListSidebarProps } from './VMListSidebar';
+export { default as VMWizard, type VMConfig, type VMWizardProps } from './VMWizard';
+export { VMDetailView, type VMDetailViewProps } from './VMDetailView';
+export { DisplayControl } from './DisplayControl';
