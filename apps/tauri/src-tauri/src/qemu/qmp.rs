@@ -1,3 +1,13 @@
+pub struct QmpClient {
+    pub socket_path: String,
+}
+
+impl QmpClient {
+    pub fn new(socket_path: String) -> Self {
+        Self { socket_path }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::qemu::qmp::*;
