@@ -16,8 +16,8 @@ jobs:
           bun-version: latest
       - name: Install dependencies
         run: bun install
-      - name: Build packages
-        run: bun run build
+      - name: Build packages (excluding Tauri)
+        run: bun run build --filter=!@openutm/tauri
       - name: Run tests
         run: bun run test
       - name: Type check
@@ -36,8 +36,6 @@ jobs:
         run: bun install
       - name: Build packages
         run: bun run build
-      - name: Build Tauri frontend
-        run: cd apps/tauri && bunx vite build
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Build Tauri app
@@ -52,7 +50,7 @@ jobs:
           bun-version: latest
       - name: Install dependencies
         run: bun install
-      - name: Build packages
-        run: bun run build
+      - name: Build packages (excluding Tauri)
+        run: bun run build --filter=!@openutm/tauri
       - name: Build Electron app
         run: cd apps/electron && bun run build
