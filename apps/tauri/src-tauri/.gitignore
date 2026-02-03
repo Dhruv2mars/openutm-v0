@@ -1,0 +1,16 @@
+target/
+Cargo.lock
+*.rlib
+*.dylib
+*.so
+*.a
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store

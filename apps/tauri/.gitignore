@@ -1,0 +1,23 @@
+# Generated/built
+dist/
+dist-ssr/
+*.local
+target/
+
+# Dependencies
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vite
+.env.local
+.env.*.local
