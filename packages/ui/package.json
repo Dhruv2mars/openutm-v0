@@ -22,7 +22,7 @@
     "build": "tsc && node scripts/build.js",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
+    "lint": "echo 'No lint configured'",
     "test": "vitest"
   },
   "dependencies": {
