@@ -8,12 +8,17 @@ node_modules/
 
 # Build outputs
 dist/
-build/
 out/
+
+# Don't ignore apps/electron/build (contains icons and entitlements)
+!apps/electron/build/
 
 # Rust/Tauri
 target/
 src-tauri/target/
+
+# Electron Builder
+apps/electron/release/
 
 # Environment
 .env
