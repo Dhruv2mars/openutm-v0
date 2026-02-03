@@ -530,7 +530,7 @@ Each platform has different virtualization backends:
 ---
 
 ## Phase 4 — UI Implementation
-**Status**: LOCKED
+**Status**: DONE
 **Goal**: Complete desktop application UI
 
 ### 4.1 Main Layout
@@ -539,24 +539,24 @@ Each platform has different virtualization backends:
 **Parallelizable**: NO
 
 **Tasks**:
-- [ ] Implement sidebar layout (like UTM):
+- [x] Implement sidebar layout (like UTM):
   - VM list with status indicators
   - Add VM button
   - Settings button
-- [ ] Implement main content area:
+- [x] Implement main content area:
   - VM detail view (empty state initially)
   - Responsive layout
-- [ ] Add toolbar with actions:
+- [x] Add toolbar with actions:
   - Start, Stop, Pause, Restart buttons
   - VM name/status display
-- [ ] Add macOS-style styling
-- [ ] Implement dark/light mode support
+- [x] Add macOS-style styling
+- [x] Implement dark/light mode support
 
 **Acceptance Criteria**:
-- [ ] Layout matches UTM style
-- [ ] Sidebar resizable
-- [ ] Toolbar shows relevant actions
-- [ ] Theme switching works
+- [x] Layout matches UTM style
+- [x] Sidebar resizable
+- [x] Toolbar shows relevant actions
+- [x] Theme switching works
 
 **Commit**: `feat: main layout`
 
@@ -566,25 +566,25 @@ Each platform has different virtualization backends:
 **Parallelizable**: NO
 
 **Tasks**:
-- [ ] Implement VM list component:
+- [x] Implement VM list component:
   - Show VM name, status icon
   - Running VMs highlighted
   - Sort: running first, then alphabetical
-- [ ] Add status indicators:
+- [x] Add status indicators:
   - Running (green dot)
   - Stopped (gray)
   - Paused (yellow)
   - Error (red)
-- [ ] Add context menu:
+- [x] Add context menu:
   - Start, Stop, Delete options
-- [ ] Implement selection (click to view details)
-- [ ] Add "Empty state" when no VMs
+- [x] Implement selection (click to view details)
+- [x] Add "Empty state" when no VMs
 
 **Acceptance Criteria**:
-- [ ] VMs display with correct status
-- [ ] Clicking selects VM
-- [ ] Context menu works
-- [ ] Empty state shown when appropriate
+- [x] VMs display with correct status
+- [x] Clicking selects VM
+- [x] Context menu works
+- [x] Empty state shown when appropriate
 
 **Commit**: `feat: vm list sidebar`
 
@@ -594,25 +594,25 @@ Each platform has different virtualization backends:
 **Parallelizable**: NO
 
 **Tasks**:
-- [ ] Implement wizard component with steps:
+- [x] Implement wizard component with steps:
   1. Choose OS type (Linux, Windows, macOS, Other)
   2. Select ISO or use existing
   3. Hardware config (CPU, RAM, Disk)
   4. Network config
   5. Review and create
-- [ ] Add OS detection from ISO name
-- [ ] Suggest defaults based on OS:
+- [x] Add OS detection from ISO name
+- [x] Suggest defaults based on OS:
   - Memory: 2GB for Linux, 4GB for Windows
   - CPU: 2 cores
   - Disk: 25GB
-- [ ] Add progress indication
-- [ ] Handle errors gracefully
+- [x] Add progress indication
+- [x] Handle errors gracefully
 
 **Acceptance Criteria**:
-- [ ] Wizard has clear steps
-- [ ] OS detection works for common ISOs
-- [ ] Suggested defaults are reasonable
-- [ ] Can create VM end-to-end
+- [x] Wizard has clear steps
+- [x] OS detection works for common ISOs
+- [x] Suggested defaults are reasonable
+- [x] Can create VM end-to-end
 
 **Commit**: `feat: create vm wizard`
 
@@ -622,22 +622,22 @@ Each platform has different virtualization backends:
 **Parallelizable**: NO
 
 **Tasks**:
-- [ ] Implement VM info panel:
+- [x] Implement VM info panel:
   - Name, description, status
   - Resource usage (if running)
-- [ ] Implement settings editor:
+- [x] Implement settings editor:
   - Hardware tab: CPU, RAM (editable)
   - Drives tab: Add/remove drives
   - Network tab: Configure networking
-- [ ] Add start/stop/pause controls
-- [ ] Add delete VM button (with confirmation)
-- [ ] Show display connection info
+- [x] Add start/stop/pause controls
+- [x] Add delete VM button (with confirmation)
+- [x] Show display connection info
 
 **Acceptance Criteria**:
-- [ ] Settings persist on edit
-- [ ] Controls work (start/stop/pause)
-- [ ] Delete shows confirmation dialog
-- [ ] Updates reflect in sidebar
+- [x] Settings persist on edit
+- [x] Controls work (start/stop/pause)
+- [x] Delete shows confirmation dialog
+- [x] Updates reflect in sidebar
 
 **Commit**: `feat: vm detail view`
 
@@ -647,21 +647,21 @@ Each platform has different virtualization backends:
 **Parallelizable**: NO
 
 **Tasks**:
-- [ ] Research display options:
+- [x] Research display options:
   - Option A: In-app canvas (complex)
   - Option B: Launch external viewer (simpler)
-- [ ] Implement chosen approach:
+- [x] Implement chosen approach:
   - If external: Launch `remote-viewer` or `virt-viewer` with SPICE URL
   - If in-app: Evaluate noVNC or similar
-- [ ] Handle display window lifecycle
-- [ ] Add "Open Display" button
-- [ ] Show display status in UI
+- [x] Handle display window lifecycle
+- [x] Add "Open Display" button
+- [x] Show display status in UI
 
 **Acceptance Criteria**:
-- [ ] Can open VM display
-- [ ] Display shows running VM
-- [ ] Clipboard shared (if SPICE)
-- [ ] Window closes properly
+- [x] Can open VM display
+- [x] Display shows running VM
+- [x] Clipboard shared (if SPICE)
+- [x] Window closes properly
 
 **Commit**: `feat: display integration`
 
