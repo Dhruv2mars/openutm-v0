@@ -44,6 +44,18 @@
         "vite": "^5.0.0",
       },
     },
+    "packages/qemu-lib": {
+      "name": "@openutm/qemu-lib",
+      "version": "0.1.0",
+      "dependencies": {
+        "@openutm/shared-types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^20.10.6",
+        "typescript": "^5.3.3",
+        "vitest": "^1.1.0",
+      },
+    },
     "packages/shared-types": {
       "name": "@openutm/shared-types",
       "version": "0.1.0",
@@ -200,6 +212,8 @@
     "@npmcli/move-file": ["@npmcli/move-file@1.1.2", "", { "dependencies": { "mkdirp": "^1.0.4", "rimraf": "^3.0.2" } }, "sha512-1SUf/Cg2GzGDyaf15aR9St9TWlb+XvbZXWpDx8YKs7MLzMH/BCeopv+y9vzrzgkfykCGuWOlSu3mZhj2+FQcrg=="],
 
     "@openutm/electron": ["@openutm/electron@workspace:apps/electron"],
+
+    "@openutm/qemu-lib": ["@openutm/qemu-lib@workspace:packages/qemu-lib"],
 
     "@openutm/shared-types": ["@openutm/shared-types@workspace:packages/shared-types"],
 
