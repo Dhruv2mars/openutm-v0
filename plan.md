@@ -1015,36 +1015,6 @@ bun tauri build
 
 ---
 
-## Commit Message Format
-
-```
-<type>(<scope>): <description>
-
-[optional body]
-
-[optional footer]
-```
-
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `test`: Tests
-- `refactor`: Code refactoring
-- `docs`: Documentation
-- `chore`: Maintenance
-
-Scopes: `core`, `ui`, `qemu`, `desktop`, `storage`, `config`
-
----
-
-## Remaining Open Questions
-
-1. **Cloud VM Integration**: Future feature? (AWS, Azure, GCP)? Say no for now.
-2. **Container Support**: Docker/Podman integration alongside VMs? Future phase.
-3. **Mobile Version**: iOS/Android companion app? Not in roadmap.
-
----
-
 ## References
 
 ### Research Sources
