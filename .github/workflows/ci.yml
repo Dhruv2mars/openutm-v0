@@ -37,7 +37,9 @@ jobs:
       - name: Build packages
         run: bun run build
       - name: Build Tauri frontend
-        run: cd apps/tauri && vite build
+        run: cd apps/tauri && bunx vite build
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
       - name: Build Tauri app
         run: cd apps/tauri && bun tauri build
 
