@@ -2,6 +2,7 @@ import { MainLayout, VMListSidebar, VMWizard, VMDetailView, DisplayControl } fro
 import { useState } from 'react';
 import './App.css';
 import type { VM } from '@openutm/shared-types';
+import { VMStatus } from '@openutm/shared-types';
 
 function App() {
   const [selectedVM, setSelectedVM] = useState<string | null>(null);
@@ -9,17 +10,15 @@ function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   const mockVMs = [
-    { id: '1', name: 'Ubuntu VM', status: 'running' as const, os: 'Linux' },
-    { id: '2', name: 'Windows VM', status: 'stopped' as const, os: 'Windows' },
+    { id: '1', name: 'Ubuntu VM', status: VMStatus.Running, os: 'Linux' },
+    { id: '2', name: 'Windows VM', status: VMStatus.Stopped, os: 'Windows' },
   ];
 
   const mockVM: VM = {
     id: selectedVM || '1',
     name: 'Test VM',
-    status: 'running',
+    status: VMStatus.Running,
     config: {
-      id: '1',
-      vmId: selectedVM || '1',
       cpu: 2,
       memory: 4096,
       drives: [],
@@ -80,7 +79,7 @@ function App() {
       )}
       <DisplayControl 
         onOpenDisplay={() => console.log('Open display')}
-        status={mockVMs.find(v => v.id === selectedVM)?.status || 'stopped'}
+        status={mockVMs.find(v => v.id === selectedVM)?.status || VMStatus.Stopped}
       />
     </MainLayout>
   );
