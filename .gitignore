@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Turbo
+.turbo/
+
+# Build outputs
+dist/
+build/
+out/
+
+# Rust/Tauri
+target/
+src-tauri/target/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/settings.json
+.vscode/extensions.json
+.idea/
+*.sublime-workspace
+
+# Testing
+.nyc_output/
+coverage/
+
+# Misc
+.cache/
+.eslintcache
