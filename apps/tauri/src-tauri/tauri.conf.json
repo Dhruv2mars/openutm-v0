@@ -6,7 +6,7 @@
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist",
     "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "bunx vite build"
   },
   "app": {
     "windows": [
