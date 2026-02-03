@@ -21,7 +21,7 @@ function App() {
     config: {
       cpu: 2,
       memory: 4096,
-      drives: [],
+      disks: [],
       network: { type: 'nat' },
     },
   };
