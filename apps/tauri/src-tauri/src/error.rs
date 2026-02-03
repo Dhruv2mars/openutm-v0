@@ -25,6 +25,9 @@ pub enum Error {
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
 
+    #[error("UTF-8 error: {0}")]
+    Utf8Error(#[from] std::string::FromUtf8Error),
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
