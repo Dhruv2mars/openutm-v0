@@ -5,11 +5,11 @@ Cross-platform, open source UTM alternative. Easy hypervisor for everybody to ha
 ## Tech Stack
 
 - **Monorepo**: Turborepo + Bun
-- **Frontends**: Tauri (Rust) + Electron (Node.js) for A/B testing
+- **Frontends**: Tauri (Rust) + Electron (Node.js) — both built with equal care, user chooses
 - **UI Framework**: React + TypeScript
 - **Backend**: Direct QEMU control via QMP
 - **Display**: SPICE protocol
-- **Telemetry**: PostHog (opt-in)
+- **Telemetry**: PostHog (always-on, anonymous)
 
 ## Project Structure
 

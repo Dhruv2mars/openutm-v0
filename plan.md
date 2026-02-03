@@ -114,8 +114,8 @@ Each platform has different virtualization backends:
   - Download and install automatically
   - User can disable in settings
 
-### Telemetry (Opt-in)
-- Anonymous usage metrics to improve product
+### Telemetry (Always-on)
+- Anonymous usage metrics to improve product (no user action required)
 - Data collected:
   - VM start/stop counts (no VM content)
   - Feature usage (e.g., "create VM wizard opened")
@@ -795,8 +795,8 @@ Each platform has different virtualization backends:
 
 **Commit**: `feat: electron macos packaging`
 
-### 5.6 Framework Comparison & Decision
-**What**: Evaluate Tauri vs Electron for OpenUTM
+### 5.6 Framework Comparison & Documentation
+**What**: Document Tauri vs Electron metrics for user transparency
 **Dependencies**: 5.3, 5.5
 **Parallelizable**: NO
 
@@ -814,16 +814,14 @@ Each platform has different virtualization backends:
   - Build times
   - Debug experience
   - Hot reload speed
-- [x] Create comparison report
-- [x] Make recommendation for primary framework
+- [x] Create comparison report for users
 
 **Acceptance Criteria**:
 - [x] Metrics collected for both frameworks
 - [x] Comparison report documented in `docs/framework-comparison.md`
-- [x] Clear winner identified with justification
-- [x] Decision recorded in ADR (Architecture Decision Record)
+- [x] Both versions built with equal quality and care
 
-**Result**: **Tauri recommended** (28x smaller bundle)
+**Result**: Both versions released — user chooses their preferred version
 
 **Commit**: `docs: framework comparison report`
 
@@ -877,7 +875,7 @@ Each platform has different virtualization backends:
 **Acceptance Criteria**:
 - [ ] Data collected matches documented list
 
-**Status**: Optional, not started
+**Status**: Required, not started
 
 **Commit**: `feat: telemetry`
 

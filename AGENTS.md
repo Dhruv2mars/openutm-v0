@@ -95,7 +95,7 @@ Critical: When creating the plan.md content, your are responsible for deciding w
 - **Backend**: Direct QEMU control via QMP (not libvirt)
 - **Display**: SPICE protocol
 - **CI/CD**: GitHub Actions
-- **Telemetry**: PostHog
+- **Telemetry**: PostHog (always-on, anonymous)
 
 **Platform Strategy**:
 - **Phase 1**: macOS first (HVF accelerator)
@@ -122,7 +122,7 @@ Critical: When creating the plan.md content, your are responsible for deciding w
 - NO live migration
 - Start single-platform (macOS), expand later
 
-**Framework Comparison**: Building both Tauri and Electron to let users decide which version they want to use.
+**Framework Philosophy**: Building both Tauri and Electron with equal care and quality. No bias — user chooses their preferred version.
 
 **Display Protocol**: SPICE (integrated in app window, clipboard/audio sharing, dynamic resolution)
 
