@@ -10,7 +10,10 @@
   },
   "dependencies": {
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@openutm/ui": "workspace:*",
+    "@openutm/vm-core": "workspace:*",
+    "@openutm/shared-types": "workspace:*"
   },
   "devDependencies": {
     "@tauri-apps/api": "^2.0.0",
