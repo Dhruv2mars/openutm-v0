@@ -8,6 +8,7 @@ import {
   VMWizard,
   Button,
   QemuSetupWizard,
+  useToast,
   type VMListItem,
   type QemuDetectionResult,
 } from '@openutm/ui';
@@ -73,6 +74,7 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | undefined>(MOCK_VMS[0]?.id);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const { addToast } = useToast();
 
   const checkQemu = useCallback(async () => {
     setAppState('loading');
@@ -90,7 +92,7 @@ function App() {
       } else {
         setAppState('qemu-setup');
       }
-    } catch {
+    } catch (error) {
       setQemuResult({
         available: false,
         path: null,
@@ -99,8 +101,9 @@ function App() {
         minimumVersionMet: false,
       });
       setAppState('qemu-setup');
+      addToast('error', 'Failed to detect QEMU installation');
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     checkQemu();
@@ -122,11 +125,15 @@ function App() {
 
   const handleContextMenu = useCallback(
     (id: string, action: 'start' | 'stop' | 'delete') => {
+      const vm = vms.find((v) => v.id === id);
+      const vmName = vm?.name || 'VM';
+      
       if (action === 'delete') {
         setVms((prev) => prev.filter((vm) => vm.id !== id));
         if (selectedId === id) {
           setSelectedId(vms[0]?.id);
         }
+        addToast('success', `${vmName} deleted`);
         return;
       }
 
@@ -137,12 +144,16 @@ function App() {
           return { ...vm, status: newStatus };
         })
       );
+      addToast('success', `${vmName} ${action === 'start' ? 'started' : 'stopped'}`);
     },
-    [selectedId, vms]
+    [selectedId, vms, addToast]
   );
 
   const handleAction = useCallback(
     (id: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'shutdown') => {
+      const vm = vms.find((v) => v.id === id);
+      const vmName = vm?.name || 'VM';
+      
       setVms((prev) =>
         prev.map((vm) => {
           if (vm.id !== id) return vm;
@@ -165,8 +176,17 @@ function App() {
           return { ...vm, status: newStatus };
         })
       );
+      
+      const actionLabels: Record<typeof action, string> = {
+        start: 'started',
+        stop: 'stopped',
+        pause: 'paused',
+        resume: 'resumed',
+        shutdown: 'shut down',
+      };
+      addToast('success', `${vmName} ${actionLabels[action]}`);
     },
-    []
+    [vms, addToast]
   );
 
   const handleUpdateConfig = useCallback((id: string, config: Partial<VM['config']>) => {
@@ -176,16 +196,20 @@ function App() {
         return { ...vm, config: { ...vm.config, ...config } };
       })
     );
-  }, []);
+    addToast('info', 'Configuration updated');
+  }, [addToast]);
 
   const handleDelete = useCallback(
     (id: string) => {
+      const vm = vms.find((v) => v.id === id);
+      const vmName = vm?.name || 'VM';
       setVms((prev) => prev.filter((vm) => vm.id !== id));
       if (selectedId === id) {
         setSelectedId(vms.find((vm) => vm.id !== id)?.id);
       }
+      addToast('success', `${vmName} deleted`);
     },
-    [selectedId, vms]
+    [selectedId, vms, addToast]
   );
 
   const handleWizardComplete = useCallback((wizardConfig: any) => {
@@ -209,7 +233,8 @@ function App() {
     setVms((prev) => [...prev, newVm]);
     setSelectedId(newVm.id);
     setShowWizard(false);
-  }, []);
+    addToast('success', `${newVm.name} created successfully`);
+  }, [addToast]);
 
   if (appState === 'loading') {
     return (
