@@ -90,19 +90,19 @@ Critical: When creating the plan.md content, your are responsible for deciding w
 **Vision**: Cross-platform, open source UTM alternative. Easy hypervisor for everybody to have a mini computer inside their computer.
 
 **Tech Stack**:
-- **Frontends**: BOTH Tauri (Rust) AND Electron (Node.js) for A/B testing
+- **Frontends**: BOTH Tauri (Rust) AND Electron (Node.js)
 - **Shared**: React + TypeScript, Turborepo + Bun
 - **Backend**: Direct QEMU control via QMP (not libvirt)
 - **Display**: SPICE protocol
-- **CI/CD**: GitHub Actions (free for public repos)
-- **Telemetry**: PostHog (opt-in, free tier for open source)
+- **CI/CD**: GitHub Actions
+- **Telemetry**: PostHog
 
 **Platform Strategy**:
 - **Phase 1**: macOS first (HVF accelerator)
 - **Phase 2**: Linux (KVM)
 - **Phase 3**: Windows (WHPX)
 
-**Target User**: General consumers (VirtualBox replacement)
+**Target User**: General consumers
 
 **QEMU Strategy**: Auto-detect system QEMU; in-app download if missing (no bundling)
 
@@ -113,7 +113,7 @@ Critical: When creating the plan.md content, your are responsible for deciding w
 **Key Patterns**:
 - UTM-like UI: sidebar, wizard-based setup, configuration inspector
 - Quickemu-inspired: auto-detect accelerators, typed command builder
-- Direct QEMU: QMP for control, not libvirt (weak cross-platform support)
+- Direct QEMU: QMP for control, not libvirt
 
 **Guardrails**:
 - NO code signing initially (unsigned builds, will show warnings)
@@ -122,13 +122,9 @@ Critical: When creating the plan.md content, your are responsible for deciding w
 - NO live migration
 - Start single-platform (macOS), expand later
 
-**Framework Comparison**: Building both Tauri and Electron to empirically test which performs better for VM management
-- Tauri: 2.6MB bundle, ~310MB memory, native Rust backend
-- Electron: 166MB bundle, ~460MB memory, massive ecosystem
+**Framework Comparison**: Building both Tauri and Electron to let users decide which version they want to use.
 
 **Display Protocol**: SPICE (integrated in app window, clipboard/audio sharing, dynamic resolution)
-
-**Budget**: No money for code signing initially. GitHub Actions free for public repos. PostHog free tier for telemetry.
 
 **References**:
 - UTM: https://mac.getutm.app

@@ -13,21 +13,21 @@ A cross-platform, open source hypervisor that makes it easy for anybody to have 
 - **MVP**: macOS first (Apple Silicon + Intel)
 - **Phase 2**: Linux (KVM backend)
 - **Phase 3**: Windows (WHPX backend)
-- **Rationale**: macOS has best HVF support, natural fit with Tauri, and is UTM's primary market
+
 
 ### Tech Stack
-- **Frontends**: BOTH Tauri AND Electron (A/B testing to determine winner)
-  - Tauri: Rust backend + React frontend (2.6MB bundle, native performance)
-  - Electron: Node.js backend + React frontend (166MB bundle, massive ecosystem)
+- **Frontends**: BOTH Tauri AND Electron
+  - Tauri: Rust backend + React frontend
+  - Electron: Node.js backend + React frontend
 - **UI Framework**: React + TypeScript (shared between both)
 - **Backend**: Direct QEMU control via QMP (not libvirt)
 - **Monorepo**: Turborepo + Bun
-- **Rationale**: Building both to empirically test which performs better for VM management. Winner becomes primary; other deprecated or kept for compatibility.
+- **Rationale**: Building both so that the user decides which one they want to use. Both versions (tauri and electron) has to be made with utmost perfection.
 
 ### Target User
 - **Primary**: General consumers seeking VirtualBox replacement
 - **Secondary**: Developers needing local dev environments
-- **Priority**: Ease of use > Power features > Performance
+- **Priority**: Performance > Ease of use > Power features 
 
 ### QEMU Strategy
 - **Detection**: Auto-detect system QEMU
@@ -104,7 +104,7 @@ Each platform has different virtualization backends:
 **Platform detection layer** will handle accelerator selection automatically.
 
 ### CI/CD & Distribution
-- **CI/CD**: GitHub Actions (free for public repos)
+- **CI/CD**: GitHub Actions
   - Automated testing on every push
   - Build both Tauri and Electron binaries
   - Multi-platform builds (macOS, Linux, Windows)
@@ -116,13 +116,11 @@ Each platform has different virtualization backends:
 
 ### Telemetry (Opt-in)
 - Anonymous usage metrics to improve product
-- Data collected (only if user opts in):
+- Data collected:
   - VM start/stop counts (no VM content)
   - Feature usage (e.g., "create VM wizard opened")
-  - Error rates and types (no personal data)
+  - Error rates and types
   - App version and platform
-- User can disable anytime in settings
-- All data aggregated, never sold
 
 ---
 
@@ -862,7 +860,7 @@ Each platform has different virtualization backends:
 **Commit**: `ci: github actions workflows`
 
 ### 5.8 Telemetry Implementation
-**What**: Anonymous usage metrics (opt-in)
+**What**: Anonymous usage metrics
 **Dependencies**: 5.7
 **Parallelizable**: NO
 
@@ -871,28 +869,17 @@ Each platform has different virtualization backends:
   - `packages/telemetry/`
   - Track: VM start/stop counts, feature usage, errors, app version
   - Never track: VM contents, personal data, file names
-- [ ] Add opt-in dialog on first launch:
-  - Explain what is collected
-  - Allow user to enable/disable
-  - Link to privacy policy
-- [ ] Add telemetry toggle in settings
-- [ ] Setup PostHog project (free tier for open source):
+- [ ] Setup PostHog project:
   - Create PostHog account
   - Get project API key
   - Configure for anonymous tracking only
-  - No personal data, no VM contents
-- [ ] Add privacy policy document
 
 **Acceptance Criteria**:
-- [ ] First launch shows opt-in dialog
-- [ ] Telemetry only sends if user opted in
-- [ ] User can disable anytime in settings
 - [ ] Data collected matches documented list
-- [ ] Privacy policy exists
 
 **Status**: Optional, not started
 
-**Commit**: `feat: opt-in telemetry`
+**Commit**: `feat: telemetry`
 
 ---
 
@@ -1049,16 +1036,6 @@ Types:
 Scopes: `core`, `ui`, `qemu`, `desktop`, `storage`, `config`
 
 ---
-
-## Unresolved Questions (Answered)
-
-✅ **Display Protocol**: SPICE (confirmed)
-✅ **Code Signing**: No budget - unsigned builds initially
-✅ **CI/CD**: GitHub Actions (confirmed, free for public repos)
-✅ **Auto-updates**: Tauri updater + electron-updater (confirmed)
-✅ **Metrics**: Opt-in telemetry with PostHog (confirmed)
-✅ **Framework**: Building BOTH Tauri and Electron for A/B testing
-✅ **Telemetry Provider**: PostHog (generous free tier for open source)
 
 ## Remaining Open Questions
 
