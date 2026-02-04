@@ -9,7 +9,7 @@ Cross-platform, open source UTM alternative. Easy hypervisor for everybody to ha
 - **UI Framework**: React + TypeScript
 - **Backend**: Direct QEMU control via QMP
 - **Display**: SPICE protocol
-- **Telemetry**: PostHog (always-on, anonymous)
+- **Telemetry**: none
 
 ## Project Structure
 
@@ -23,7 +23,6 @@ openutm/
 │   ├── vm-core/        # VM management logic
 │   ├── qemu-lib/       # QEMU QMP abstraction
 │   ├── shared-types/   # TypeScript type definitions
-│   └── telemetry/      # PostHog integration
 ├── package.json        # Root workspace config
 └── turbo.json          # Turborepo pipeline
 ```

@@ -95,7 +95,7 @@ Critical: When creating the plan.md content, your are responsible for deciding w
 - **Backend**: Direct QEMU control via QMP (not libvirt)
 - **Display**: SPICE protocol
 - **CI/CD**: GitHub Actions
-- **Telemetry**: PostHog (always-on, anonymous)
+- **Telemetry**: none
 
 **Platform Strategy**:
 - **Phase 1**: macOS first (HVF accelerator)
@@ -131,4 +131,3 @@ Critical: When creating the plan.md content, your are responsible for deciding w
 - Quickemu: https://github.com/quickemu-project/quickemu
 - Tauri: https://tauri.app
 - QMP: https://wiki.qemu.org/Documentation/QMP
-- PostHog: https://posthog.com

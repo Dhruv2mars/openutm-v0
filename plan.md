@@ -114,13 +114,8 @@ Each platform has different virtualization backends:
   - Download and install automatically
   - User can disable in settings
 
-### Telemetry (Always-on)
-- Anonymous usage metrics to improve product (no user action required)
-- Data collected:
-  - VM start/stop counts (no VM content)
-  - Feature usage (e.g., "create VM wizard opened")
-  - Error rates and types
-  - App version and platform
+### Telemetry
+- None
 
 ---
 
@@ -857,27 +852,19 @@ Each platform has different virtualization backends:
 
 **Commit**: `ci: github actions workflows`
 
-### 5.8 Telemetry Implementation
-**What**: Anonymous usage metrics
-**Dependencies**: 5.7
-**Parallelizable**: NO
+### 5.8 Telemetry
+**What**: None (explicitly no telemetry)
+**Dependencies**: None
+**Parallelizable**: YES
 
 **Tasks**:
-- [ ] Create telemetry service (shared package):
-  - `packages/telemetry/`
-  - Track: VM start/stop counts, feature usage, errors, app version
-  - Never track: VM contents, personal data, file names
-- [ ] Setup PostHog project:
-  - Create PostHog account
-  - Get project API key
-  - Configure for anonymous tracking only
+- [x] Confirm no telemetry in product
+- [x] Remove telemetry references from docs
 
 **Acceptance Criteria**:
-- [ ] Data collected matches documented list
+- [x] No telemetry code or docs remain
 
-**Status**: Required, not started
-
-**Commit**: `feat: telemetry`
+**Status**: DONE
 
 ---
 
