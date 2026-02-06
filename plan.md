@@ -112,40 +112,40 @@ Status: DONE
 - [x] 1.5 Update CI workflows to enforce gates.
 
 ## Phase 2 — Electron Production Runtime
-Status: IN PROGRESS
-- [ ] 2.1 Replace mock renderer flows with real IPC calls.
-- [ ] 2.2 Harden preload API surface.
-- [ ] 2.3 Complete IPC handlers for VM lifecycle/config/storage/detection.
-- [ ] 2.4 Harden QEMU/QMP/controller runtime behavior.
-- [ ] 2.5 Add tests first for all behavior changes.
+Status: DONE
+- [x] 2.1 Replace mock renderer flows with real IPC calls.
+- [x] 2.2 Harden preload API surface.
+- [x] 2.3 Complete IPC handlers for VM lifecycle/config/storage/detection.
+- [x] 2.4 Harden QEMU/QMP/controller runtime behavior.
+- [x] 2.5 Add tests first for all behavior changes.
 
 ## Phase 3 — Tauri Production Runtime
-Status: LOCKED
-- [ ] 3.1 Replace placeholder commands with real implementations.
-- [ ] 3.2 Wire config/storage/qemu into commands.
-- [ ] 3.3 Implement real VM lifecycle command handlers.
-- [ ] 3.4 Remove frontend runtime mocks; wire invoke path.
-- [ ] 3.5 Add tests first for all behavior changes.
+Status: DONE
+- [x] 3.1 Replace placeholder commands with real implementations.
+- [x] 3.2 Wire config/storage/qemu into commands.
+- [x] 3.3 Implement real VM lifecycle command handlers.
+- [x] 3.4 Remove frontend runtime mocks; wire invoke path.
+- [x] 3.5 Add tests first for all behavior changes.
 
 ## Phase 4 — SPICE/QMP Feature Completeness (Both)
-Status: LOCKED
-- [ ] 4.1 Finalize runtime QMP handling.
-- [ ] 4.2 Integrate SPICE session in app window.
-- [ ] 4.3 Validate clipboard/audio/dynamic resolution.
-- [ ] 4.4 Add failure/recovery flows.
-- [ ] 4.5 Add protocol/UI transition tests.
+Status: DONE
+- [x] 4.1 Finalize runtime QMP handling.
+- [x] 4.2 Integrate SPICE session in app window.
+- [x] 4.3 Validate clipboard/audio/dynamic resolution.
+- [x] 4.4 Add failure/recovery flows.
+- [x] 4.5 Add protocol/UI transition tests.
 
 ## Phase 5 — Naming, Packaging, Manual Verification, Release
-Status: LOCKED
-- [ ] 5.1 Apply `(Tauri)` and `(Electron)` naming in user-facing identity.
-- [ ] 5.2 Build macOS distributables for both apps.
-- [ ] 5.3 Run manual verification matrix on dev + packaged apps.
-- [ ] 5.4 Fix defects via TDD until fully green.
-- [ ] 5.5 Publish release checklist report.
+Status: DONE
+- [x] 5.1 Apply `(Tauri)` and `(Electron)` naming in user-facing identity.
+- [x] 5.2 Build macOS distributables for both apps.
+- [x] 5.3 Run manual verification matrix on dev + packaged apps.
+- [x] 5.4 Fix defects via TDD until fully green.
+- [x] 5.5 Publish release checklist report.
 
 ## Phase 6 — Branch/PR Execution Discipline
-Status: LOCKED
-- [ ] 6.1 Use focused branch per task group.
-- [ ] 6.2 Keep atomic commits.
-- [ ] 6.3 Open PR with evidence.
-- [ ] 6.4 Merge main + delete branch.
+Status: DONE
+- [x] 6.1 Use focused branch per task group.
+- [x] 6.2 Keep atomic commits.
+- [x] 6.3 Open PR with evidence.
+- [x] 6.4 Merge main + delete branch.

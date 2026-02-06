@@ -19,6 +19,8 @@ fi
 
 ditto "$ELECTRON_APP" "$DEST_DIR/OpenUTM (Electron).app"
 ditto "$TAURI_APP" "$DEST_DIR/OpenUTM (Tauri).app"
+xattr -dr com.apple.quarantine "$DEST_DIR/OpenUTM (Electron).app" || true
+xattr -dr com.apple.quarantine "$DEST_DIR/OpenUTM (Tauri).app" || true
 
 echo "installed: $DEST_DIR/OpenUTM (Electron).app"
 echo "installed: $DEST_DIR/OpenUTM (Tauri).app"
