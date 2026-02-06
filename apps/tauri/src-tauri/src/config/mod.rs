@@ -2,7 +2,6 @@ use crate::Result;
 use crate::error::Error;
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
-use serde_json::{json, Value};
 
 pub struct ConfigStore {
     db_path: PathBuf,

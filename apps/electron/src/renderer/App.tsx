@@ -9,9 +9,21 @@ import {
   Button,
   QemuSetupWizard,
   useToast,
+  type VMConfig as WizardConfig,
   type VMListItem,
   type QemuDetectionResult,
 } from '@openutm/ui';
+import {
+  createVmViaBackend,
+  deleteVmViaBackend,
+  detectQemuViaBackend,
+  listVmsViaBackend,
+  pauseVmViaBackend,
+  resumeVmViaBackend,
+  startVmViaBackend,
+  stopVmViaBackend,
+  updateVmViaBackend,
+} from './backend';
 import './index.css';
 
 const vmStatusToListStatus = (status: VMStatus): VMListItem['status'] => {
@@ -24,42 +36,6 @@ const vmStatusToListStatus = (status: VMStatus): VMListItem['status'] => {
   return map[status];
 };
 
-const MOCK_VMS: VM[] = [
-  {
-    id: '1',
-    name: 'Ubuntu 22.04',
-    status: VMStatus.Running,
-    config: {
-      cpu: 4,
-      memory: 8192,
-      disks: [{ path: '/vms/ubuntu.qcow2', size: 53687091200, format: 'qcow2' }],
-      network: { type: 'nat' },
-    },
-  },
-  {
-    id: '2',
-    name: 'Windows 11',
-    status: VMStatus.Stopped,
-    config: {
-      cpu: 4,
-      memory: 16384,
-      disks: [{ path: '/vms/win11.qcow2', size: 107374182400, format: 'qcow2' }],
-      network: { type: 'nat' },
-    },
-  },
-  {
-    id: '3',
-    name: 'Fedora 39',
-    status: VMStatus.Paused,
-    config: {
-      cpu: 2,
-      memory: 4096,
-      disks: [{ path: '/vms/fedora.qcow2', size: 32212254720, format: 'qcow2' }],
-      network: { type: 'nat' },
-    },
-  },
-];
-
 type AppState = 'loading' | 'qemu-setup' | 'ready';
 
 const DEFAULT_INSTALL_SUGGESTION = `macOS: Install QEMU using Homebrew:
@@ -67,27 +43,43 @@ const DEFAULT_INSTALL_SUGGESTION = `macOS: Install QEMU using Homebrew:
 
 Alternatively, download from: https://www.qemu.org/download/#macos`;
 
+function inferOs(vm: VM): VMListItem['os'] {
+  const value = vm.name.toLowerCase();
+  if (value.includes('win')) return 'Windows';
+  if (value.includes('ubuntu') || value.includes('debian') || value.includes('fedora') || value.includes('linux')) {
+    return 'Linux';
+  }
+  if (value.includes('mac')) return 'macOS';
+  return 'Other';
+}
+
 function App() {
   const [appState, setAppState] = useState<AppState>('loading');
   const [qemuResult, setQemuResult] = useState<QemuDetectionResult | null>(null);
-  const [vms, setVms] = useState<VM[]>(MOCK_VMS);
-  const [selectedId, setSelectedId] = useState<string | undefined>(MOCK_VMS[0]?.id);
+  const [vms, setVms] = useState<VM[]>([]);
+  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const { addToast } = useToast();
 
+  const refreshVms = useCallback(async () => {
+    const next = await listVmsViaBackend();
+    setVms(next);
+    setSelectedId((current) => {
+      if (current && next.some((vm) => vm.id === current)) {
+        return current;
+      }
+      return next[0]?.id;
+    });
+  }, []);
+
   const checkQemu = useCallback(async () => {
     setAppState('loading');
     try {
-      const result: QemuDetectionResult = {
-        available: true,
-        path: '/opt/homebrew/bin/qemu-system-aarch64',
-        version: 'QEMU emulator version 8.2.0',
-        accelerators: ['hvf', 'tcg'],
-        minimumVersionMet: true,
-      };
+      const result = await detectQemuViaBackend();
       setQemuResult(result);
       if (result.available && result.minimumVersionMet) {
+        await refreshVms();
         setAppState('ready');
       } else {
         setAppState('qemu-setup');
@@ -101,12 +93,12 @@ function App() {
         minimumVersionMet: false,
       });
       setAppState('qemu-setup');
-      addToast('error', 'Failed to detect QEMU installation');
+      addToast('error', error instanceof Error ? error.message : 'Failed to detect QEMU installation');
     }
-  }, [addToast]);
+  }, [addToast, refreshVms]);
 
   useEffect(() => {
-    checkQemu();
+    void checkQemu();
   }, [checkQemu]);
 
   const selectedVm = vms.find((vm) => vm.id === selectedId);
@@ -115,7 +107,7 @@ function App() {
     id: vm.id,
     name: vm.name,
     status: vmStatusToListStatus(vm.status),
-    os: 'Linux',
+    os: inferOs(vm),
   }));
 
   const handleSelect = useCallback((id: string) => {
@@ -124,117 +116,123 @@ function App() {
   }, []);
 
   const handleContextMenu = useCallback(
-    (id: string, action: 'start' | 'stop' | 'delete') => {
-      const vm = vms.find((v) => v.id === id);
+    async (id: string, action: 'start' | 'stop' | 'delete') => {
+      const vm = vms.find((item) => item.id === id);
       const vmName = vm?.name || 'VM';
-      
-      if (action === 'delete') {
-        setVms((prev) => prev.filter((vm) => vm.id !== id));
-        if (selectedId === id) {
-          setSelectedId(vms[0]?.id);
-        }
-        addToast('success', `${vmName} deleted`);
-        return;
-      }
 
-      setVms((prev) =>
-        prev.map((vm) => {
-          if (vm.id !== id) return vm;
-          const newStatus = action === 'start' ? VMStatus.Running : VMStatus.Stopped;
-          return { ...vm, status: newStatus };
-        })
-      );
-      addToast('success', `${vmName} ${action === 'start' ? 'started' : 'stopped'}`);
+      try {
+        if (action === 'delete') {
+          await deleteVmViaBackend(id);
+          await refreshVms();
+          addToast('success', `${vmName} deleted`);
+          return;
+        }
+
+        if (action === 'start') {
+          await startVmViaBackend(id);
+          addToast('success', `${vmName} started`);
+        } else {
+          await stopVmViaBackend(id);
+          addToast('success', `${vmName} stopped`);
+        }
+
+        await refreshVms();
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'VM action failed');
+      }
     },
-    [selectedId, vms, addToast]
+    [addToast, refreshVms, vms]
   );
 
   const handleAction = useCallback(
-    (id: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'shutdown') => {
-      const vm = vms.find((v) => v.id === id);
+    async (id: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'shutdown') => {
+      const vm = vms.find((item) => item.id === id);
       const vmName = vm?.name || 'VM';
-      
-      setVms((prev) =>
-        prev.map((vm) => {
-          if (vm.id !== id) return vm;
-          let newStatus = vm.status;
-          switch (action) {
-            case 'start':
-              newStatus = VMStatus.Running;
-              break;
-            case 'stop':
-            case 'shutdown':
-              newStatus = VMStatus.Stopped;
-              break;
-            case 'pause':
-              newStatus = VMStatus.Paused;
-              break;
-            case 'resume':
-              newStatus = VMStatus.Running;
-              break;
-          }
-          return { ...vm, status: newStatus };
-        })
-      );
-      
-      const actionLabels: Record<typeof action, string> = {
-        start: 'started',
-        stop: 'stopped',
-        pause: 'paused',
-        resume: 'resumed',
-        shutdown: 'shut down',
-      };
-      addToast('success', `${vmName} ${actionLabels[action]}`);
+
+      try {
+        switch (action) {
+          case 'start':
+            await startVmViaBackend(id);
+            addToast('success', `${vmName} started`);
+            break;
+          case 'stop':
+          case 'shutdown':
+            await stopVmViaBackend(id);
+            addToast('success', `${vmName} stopped`);
+            break;
+          case 'pause':
+            await pauseVmViaBackend(id);
+            addToast('success', `${vmName} paused`);
+            break;
+          case 'resume':
+            await resumeVmViaBackend(id);
+            addToast('success', `${vmName} resumed`);
+            break;
+        }
+
+        await refreshVms();
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'VM action failed');
+      }
     },
-    [vms, addToast]
+    [addToast, refreshVms, vms]
   );
 
-  const handleUpdateConfig = useCallback((id: string, config: Partial<VM['config']>) => {
-    setVms((prev) =>
-      prev.map((vm) => {
-        if (vm.id !== id) return vm;
-        return { ...vm, config: { ...vm.config, ...config } };
-      })
-    );
-    addToast('info', 'Configuration updated');
-  }, [addToast]);
+  const handleUpdateConfig = useCallback(
+    async (id: string, config: Partial<VM['config']>) => {
+      try {
+        const updated = await updateVmViaBackend({
+          id,
+          cpu: config.cpu,
+          memory: config.memory,
+        });
+
+        setVms((previous) => previous.map((vm) => (vm.id === id ? updated : vm)));
+        addToast('info', 'Configuration updated');
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to update VM configuration');
+      }
+    },
+    [addToast]
+  );
 
   const handleDelete = useCallback(
-    (id: string) => {
-      const vm = vms.find((v) => v.id === id);
-      const vmName = vm?.name || 'VM';
-      setVms((prev) => prev.filter((vm) => vm.id !== id));
-      if (selectedId === id) {
-        setSelectedId(vms.find((vm) => vm.id !== id)?.id);
+    async (id: string) => {
+      try {
+        const vm = vms.find((item) => item.id === id);
+        await deleteVmViaBackend(id);
+        await refreshVms();
+        addToast('success', `${vm?.name || 'VM'} deleted`);
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to delete VM');
       }
-      addToast('success', `${vmName} deleted`);
     },
-    [selectedId, vms, addToast]
+    [addToast, refreshVms, vms]
   );
 
-  const handleWizardComplete = useCallback((wizardConfig: any) => {
-    const newVm: VM = {
-      id: String(Date.now()),
-      name: `${wizardConfig.os.charAt(0).toUpperCase() + wizardConfig.os.slice(1)} VM`,
-      status: VMStatus.Stopped,
-      config: {
-        cpu: wizardConfig.cpu,
-        memory: wizardConfig.ram,
-        disks: [
-          {
-            path: `/vms/${Date.now()}.qcow2`,
-            size: wizardConfig.disk * 1024 * 1024 * 1024,
-            format: 'qcow2',
-          },
-        ],
-        network: { type: wizardConfig.network === 'user' ? 'nat' : 'bridge' },
-      },
-    };
-    setVms((prev) => [...prev, newVm]);
-    setSelectedId(newVm.id);
-    setShowWizard(false);
-    addToast('success', `${newVm.name} created successfully`);
-  }, [addToast]);
+  const handleWizardComplete = useCallback(
+    async (wizardConfig: WizardConfig) => {
+      try {
+        const vmName = `${wizardConfig.os.charAt(0).toUpperCase() + wizardConfig.os.slice(1)} VM`;
+        const vm = await createVmViaBackend({
+          name: vmName,
+          cpu: wizardConfig.cpu,
+          memory: wizardConfig.ram,
+          diskSizeGb: wizardConfig.disk,
+          networkType: wizardConfig.network === 'user' ? 'nat' : 'bridge',
+          os: wizardConfig.os,
+        });
+
+        setShowWizard(false);
+        await refreshVms();
+        setSelectedId(vm.id);
+        addToast('success', `${vm.name} created successfully`);
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to create VM');
+      }
+    },
+    [addToast, refreshVms]
+  );
 
   if (appState === 'loading') {
     return (
@@ -253,8 +251,11 @@ function App() {
         <QemuSetupWizard
           detectionResult={qemuResult}
           installSuggestion={DEFAULT_INSTALL_SUGGESTION}
-          onRetry={checkQemu}
-          onSkip={() => setAppState('ready')}
+          onRetry={() => void checkQemu()}
+          onSkip={() => {
+            setAppState('ready');
+            void refreshVms();
+          }}
         />
       </div>
     );

@@ -2,7 +2,7 @@
   "name": "@openutm/electron",
   "version": "0.1.0",
   "description": "OpenUTM Electron App",
-  "main": "dist/main.js",
+  "main": "dist/main.cjs",
   "type": "module",
   "author": "OpenUTM Contributors",
   "license": "MIT",
@@ -23,10 +23,14 @@
     },
     "files": [
       "dist/**/*",
-      "!node_modules/**/*"
+      "package.json",
+      "node_modules/**/*"
     ],
     "extraResources": [],
     "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns",

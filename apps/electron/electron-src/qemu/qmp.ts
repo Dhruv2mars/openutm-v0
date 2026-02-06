@@ -92,7 +92,7 @@ class QMP implements QMPClient {
     }
   }
 
-  private handleGreeting(greeting: any): void {
+  private handleGreeting(_greeting: any): void {
     this.isConnected = true;
     this.performHandshake();
   }

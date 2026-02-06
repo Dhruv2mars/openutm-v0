@@ -1,6 +1,5 @@
-import sqlite3 from 'sqlite3';
 import path from 'path';
-import { mkdirSync, existsSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 
 interface VMConfigData {
   id: string;
@@ -14,196 +13,112 @@ interface VMConfigData {
   updatedAt: number;
 }
 
+interface ConfigStore {
+  vms: VMConfigData[];
+}
+
 const CONFIG_DIR = path.join(process.env.HOME || '/tmp', '.openutm');
-const DB_PATH = path.join(CONFIG_DIR, 'config.db');
+const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
-let db: sqlite3.Database | null = null;
+function ensureConfigDir(): void {
+  if (!existsSync(CONFIG_DIR)) {
+    mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+}
 
-function initializeDatabase(): Promise<sqlite3.Database> {
-  return new Promise((resolve, reject) => {
-    if (db) {
-      resolve(db);
-      return;
+function readStore(): ConfigStore {
+  ensureConfigDir();
+
+  if (!existsSync(CONFIG_PATH)) {
+    return { vms: [] };
+  }
+
+  try {
+    const raw = readFileSync(CONFIG_PATH, 'utf8');
+    const parsed = JSON.parse(raw) as ConfigStore;
+    if (!parsed || !Array.isArray(parsed.vms)) {
+      return { vms: [] };
     }
-
-    if (!existsSync(CONFIG_DIR)) {
-      mkdirSync(CONFIG_DIR, { recursive: true });
-    }
-
-    db = new sqlite3.Database(DB_PATH, (err) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-
-      db!.exec(`
-        CREATE TABLE IF NOT EXISTS vms (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          memory INTEGER NOT NULL,
-          cores INTEGER NOT NULL,
-          disk TEXT NOT NULL,
-          qmp_socket TEXT,
-          accelerator TEXT,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        )
-      `, (err) => {
-        if (err) reject(err);
-        else resolve(db!);
-      });
-    });
-  });
+    return parsed;
+  } catch {
+    return { vms: [] };
+  }
 }
 
-function runAsync(stmt: sqlite3.Statement, params: any[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    stmt.run(params, (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+function writeStore(store: ConfigStore): void {
+  ensureConfigDir();
+  const tempPath = `${CONFIG_PATH}.tmp`;
+  writeFileSync(tempPath, JSON.stringify(store, null, 2), 'utf8');
+  renameSync(tempPath, CONFIG_PATH);
+  if (existsSync(tempPath)) {
+    unlinkSync(tempPath);
+  }
 }
 
-function getAsync(stmt: sqlite3.Statement, params: any[]): Promise<any> {
-  return new Promise((resolve, reject) => {
-    stmt.get(params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-}
-
-function allAsync(stmt: sqlite3.Statement, params: any[]): Promise<any[]> {
-  return new Promise((resolve, reject) => {
-    stmt.all(params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows || []);
-    });
-  });
+function sortByCreatedAtDesc(vms: VMConfigData[]): VMConfigData[] {
+  return [...vms].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function createVMConfig(config: Omit<VMConfigData, 'createdAt' | 'updatedAt'>): Promise<VMConfigData> {
-  try {
-    const database = await initializeDatabase();
-    const now = Date.now();
+  const store = readStore();
 
-    const stmt = database.prepare(`
-      INSERT INTO vms (id, name, memory, cores, disk, qmp_socket, accelerator, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    await runAsync(stmt, [
-      config.id,
-      config.name,
-      config.memory,
-      config.cores,
-      config.disk,
-      config.qmpSocket || null,
-      config.accelerator || null,
-      now,
-      now
-    ]);
-
-    return {
-      ...config,
-      createdAt: now,
-      updatedAt: now
-    };
-  } catch (err) {
-    throw new Error(`Failed to create VM config: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  if (store.vms.some((vm) => vm.id === config.id)) {
+    throw new Error(`VM ${config.id} already exists`);
   }
+
+  const now = Date.now();
+  const next: VMConfigData = {
+    ...config,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  store.vms.push(next);
+  writeStore(store);
+
+  return next;
 }
 
 export async function getVMConfig(vmId: string): Promise<VMConfigData | null> {
-  try {
-    const database = await initializeDatabase();
-    const stmt = database.prepare('SELECT * FROM vms WHERE id = ?');
-    const row = await getAsync(stmt, [vmId]);
-
-    if (!row) return null;
-
-    return {
-      id: row.id,
-      name: row.name,
-      memory: row.memory,
-      cores: row.cores,
-      disk: row.disk,
-      qmpSocket: row.qmp_socket,
-      accelerator: row.accelerator,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    };
-  } catch (err) {
-    throw new Error(`Failed to get VM config: ${err instanceof Error ? err.message : 'Unknown error'}`);
-  }
+  const store = readStore();
+  const vm = store.vms.find((entry) => entry.id === vmId);
+  return vm || null;
 }
 
 export async function listVMs(): Promise<VMConfigData[]> {
-  try {
-    const database = await initializeDatabase();
-    const stmt = database.prepare('SELECT * FROM vms ORDER BY created_at DESC');
-    const rows = await allAsync(stmt, []);
-
-    return rows.map(row => ({
-      id: row.id,
-      name: row.name,
-      memory: row.memory,
-      cores: row.cores,
-      disk: row.disk,
-      qmpSocket: row.qmp_socket,
-      accelerator: row.accelerator,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
-    }));
-  } catch (err) {
-    throw new Error(`Failed to list VMs: ${err instanceof Error ? err.message : 'Unknown error'}`);
-  }
+  const store = readStore();
+  return sortByCreatedAtDesc(store.vms);
 }
 
-export async function updateVMConfig(vmId: string, updates: Partial<Omit<VMConfigData, 'id' | 'createdAt' | 'updatedAt'>>): Promise<VMConfigData> {
-  try {
-    const database = await initializeDatabase();
-    const now = Date.now();
+export async function updateVMConfig(
+  vmId: string,
+  updates: Partial<Omit<VMConfigData, 'id' | 'createdAt' | 'updatedAt'>>,
+): Promise<VMConfigData> {
+  const store = readStore();
+  const index = store.vms.findIndex((entry) => entry.id === vmId);
 
-    const current = await getVMConfig(vmId);
-    if (!current) {
-      throw new Error(`VM ${vmId} not found`);
-    }
-
-    const updated = { ...current, ...updates, updatedAt: now };
-
-    const stmt = database.prepare(`
-      UPDATE vms 
-      SET name = ?, memory = ?, cores = ?, disk = ?, qmp_socket = ?, accelerator = ?, updated_at = ?
-      WHERE id = ?
-    `);
-
-    await runAsync(stmt, [
-      updated.name,
-      updated.memory,
-      updated.cores,
-      updated.disk,
-      updated.qmpSocket || null,
-      updated.accelerator || null,
-      now,
-      vmId
-    ]);
-
-    return updated;
-  } catch (err) {
-    throw new Error(`Failed to update VM config: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  if (index === -1) {
+    throw new Error(`VM ${vmId} not found`);
   }
+
+  const current = store.vms[index];
+  const next: VMConfigData = {
+    ...current,
+    ...updates,
+    id: current.id,
+    createdAt: current.createdAt,
+    updatedAt: Date.now(),
+  };
+
+  store.vms[index] = next;
+  writeStore(store);
+
+  return next;
 }
 
 export async function deleteVMConfig(vmId: string): Promise<{ success: boolean }> {
-  try {
-    const database = await initializeDatabase();
-    const stmt = database.prepare('DELETE FROM vms WHERE id = ?');
-    await runAsync(stmt, [vmId]);
-
-    return { success: true };
-  } catch (err) {
-    throw new Error(`Failed to delete VM config: ${err instanceof Error ? err.message : 'Unknown error'}`);
-  }
+  const store = readStore();
+  store.vms = store.vms.filter((entry) => entry.id !== vmId);
+  writeStore(store);
+  return { success: true };
 }
