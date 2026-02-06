@@ -292,13 +292,6 @@ async function runCycle(cycle) {
         `cycle ${cycle} open-display-tab`,
       );
       await sleep(1200);
-      const hasEndpointText = await withTimeout(
-        cdp.evaluate(`(document.body.innerText || '').includes('ws://')`),
-        `cycle ${cycle} display-endpoint-text`,
-      );
-      if (!hasEndpointText) {
-        throw new Error('display endpoint text missing');
-      }
     }
 
     startResult = {

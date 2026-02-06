@@ -1,0 +1,10 @@
+spice options:
+  addr=<str>
+  agent-mouse=<bool (on/off)>
+  disable-agent-file-xfer=<bool (on/off)>
+  disable-copy-paste=<bool (on/off)>
+  disable-ticketing=<bool (on/off)>
+  display=<str>
+  head=<num>
+  image-compression=<str>
+  ipv4=<bool (on/off)>

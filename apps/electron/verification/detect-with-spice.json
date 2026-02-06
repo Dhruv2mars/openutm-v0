@@ -1,0 +1,8 @@
+{
+  "path": "/opt/homebrew/bin/qemu-system-x86_64",
+  "version": "QEMU emulator version 10.2.0",
+  "accelerators": [
+    "tcg"
+  ],
+  "spiceSupported": true
+}
