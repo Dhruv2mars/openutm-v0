@@ -1,15 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import {
   VMStatusSchema,
+  DisplayProtocolSchema,
+  DisplaySessionStatusSchema,
   VMConfigSchema,
   VMSchema,
+  DisplaySessionSchema,
   DiskSchema,
   NetworkConfigSchema,
   SystemInfoSchema,
   AcceleratorSchema,
   PlatformSchema,
 } from '../src/schemas.js';
-import { VMStatus, Platform, Accelerator } from '../src/types.js';
+import { VMStatus, Platform, Accelerator, DisplayProtocol, DisplaySessionStatus } from '../src/types.js';
 
 describe('Zod Schemas', () => {
   describe('PlatformSchema', () => {
@@ -48,6 +51,29 @@ describe('Zod Schemas', () => {
 
     it('rejects invalid statuses', () => {
       expect(() => VMStatusSchema.parse('starting')).toThrow();
+    });
+  });
+
+  describe('DisplayProtocolSchema', () => {
+    it('validates display protocol', () => {
+      expect(() => DisplayProtocolSchema.parse(DisplayProtocol.Spice)).not.toThrow();
+    });
+
+    it('rejects invalid display protocol', () => {
+      expect(() => DisplayProtocolSchema.parse('vnc')).toThrow();
+    });
+  });
+
+  describe('DisplaySessionStatusSchema', () => {
+    it('validates display session statuses', () => {
+      expect(() => DisplaySessionStatusSchema.parse(DisplaySessionStatus.Connecting)).not.toThrow();
+      expect(() => DisplaySessionStatusSchema.parse(DisplaySessionStatus.Connected)).not.toThrow();
+      expect(() => DisplaySessionStatusSchema.parse(DisplaySessionStatus.Disconnected)).not.toThrow();
+      expect(() => DisplaySessionStatusSchema.parse(DisplaySessionStatus.Error)).not.toThrow();
+    });
+
+    it('rejects invalid display session status', () => {
+      expect(() => DisplaySessionStatusSchema.parse('closed')).toThrow();
     });
   });
 
@@ -250,6 +276,32 @@ describe('Zod Schemas', () => {
         cpuCount: 8,
         totalMemory: 0,
       });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('DisplaySessionSchema', () => {
+    const validSession = {
+      vmId: '550e8400-e29b-41d4-a716-446655440000',
+      protocol: DisplayProtocol.Spice,
+      host: '127.0.0.1',
+      port: 5901,
+      uri: 'spice://127.0.0.1:5901',
+      status: DisplaySessionStatus.Connected,
+      reconnectAttempts: 1,
+    };
+
+    it('validates a display session', () => {
+      expect(() => DisplaySessionSchema.parse(validSession)).not.toThrow();
+    });
+
+    it('rejects invalid port', () => {
+      const result = DisplaySessionSchema.safeParse({ ...validSession, port: 70000 });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects negative reconnect attempts', () => {
+      const result = DisplaySessionSchema.safeParse({ ...validSession, reconnectAttempts: -1 });
       expect(result.success).toBe(false);
     });
   });

@@ -1,5 +1,7 @@
 import { VMStatus } from "@openutm/shared-types";
+import { DisplaySessionSchema } from "@openutm/shared-types";
 import type { VM } from "@openutm/shared-types";
+import type { DisplaySession } from "@openutm/shared-types";
 import type { QemuDetectionResult } from "@openutm/ui";
 
 export interface IpcResult<T> {
@@ -40,6 +42,9 @@ interface ElectronBridge {
   stopVm: (id: string) => Promise<IpcResult<{ success: boolean }>>;
   pauseVm: (id: string) => Promise<IpcResult<{ success: boolean }>>;
   resumeVm: (id: string) => Promise<IpcResult<{ success: boolean }>>;
+  openDisplay: (id: string) => Promise<IpcResult<DisplaySession>>;
+  getDisplay: (id: string) => Promise<IpcResult<DisplaySession | null>>;
+  closeDisplay: (id: string) => Promise<IpcResult<{ success: boolean }>>;
 }
 
 function getBridge(): ElectronBridge {
@@ -130,4 +135,28 @@ export async function pauseVmViaBackend(id: string): Promise<void> {
 export async function resumeVmViaBackend(id: string): Promise<void> {
   const bridge = getBridge();
   unwrapResult(await bridge.resumeVm(id), "Failed to resume VM");
+}
+
+function normalizeDisplaySession(session: DisplaySession): DisplaySession {
+  return DisplaySessionSchema.parse(session);
+}
+
+export async function openDisplayViaBackend(id: string): Promise<DisplaySession> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.openDisplay(id), "Failed to open display session");
+  return normalizeDisplaySession(data);
+}
+
+export async function getDisplayViaBackend(id: string): Promise<DisplaySession | null> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.getDisplay(id), "Failed to get display session");
+  if (!data) {
+    return null;
+  }
+  return normalizeDisplaySession(data);
+}
+
+export async function closeDisplayViaBackend(id: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.closeDisplay(id), "Failed to close display session");
 }

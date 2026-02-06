@@ -11,6 +11,9 @@ declare global {
       stopVm: (id: string) => Promise<unknown>;
       pauseVm: (id: string) => Promise<unknown>;
       resumeVm: (id: string) => Promise<unknown>;
+      openDisplay: (id: string) => Promise<unknown>;
+      getDisplay: (id: string) => Promise<unknown>;
+      closeDisplay: (id: string) => Promise<unknown>;
     };
   }
 }

@@ -13,6 +13,19 @@ mod error;
 pub use error::{Error, Result};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplaySession {
+    pub vm_id: String,
+    pub protocol: String,
+    pub host: String,
+    pub port: u16,
+    pub uri: String,
+    pub status: String,
+    pub reconnect_attempts: u32,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct QemuInfo {
     pub detected: bool,
     pub path: Option<String>,
@@ -72,6 +85,7 @@ fn main() {
         disk_manager,
         storage_dir,
         qemu_controller: tokio::sync::Mutex::new(qemu_controller),
+        display_sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
     };
 
     tauri::Builder::default()
@@ -88,6 +102,9 @@ fn main() {
             commands::get_vm,
             commands::delete_vm,
             commands::get_platform_info,
+            commands::open_display,
+            commands::get_display,
+            commands::close_display,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
