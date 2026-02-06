@@ -144,8 +144,8 @@ Status: DONE
 - [x] 5.5 Publish release checklist report.
 
 ## Phase 6 — Branch/PR Execution Discipline
-Status: IN PROGRESS
+Status: DONE
 - [x] 6.1 Use focused branch per task group.
 - [x] 6.2 Keep atomic commits.
-- [ ] 6.3 Open PR with evidence.
-- [ ] 6.4 Merge main + delete branch.
+- [x] 6.3 Open PR with evidence.
+- [x] 6.4 Merge main + delete branch.
