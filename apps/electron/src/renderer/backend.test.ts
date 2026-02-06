@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import type { VM } from "@openutm/shared-types";
 import {
+  clearManagedRuntimeViaBackend,
   closeDisplayViaBackend,
   createVmViaBackend,
   detectQemuViaBackend,
   getDisplayViaBackend,
+  getRuntimeStatusViaBackend,
+  installManagedRuntimeViaBackend,
   listVmsViaBackend,
   openDisplayViaBackend,
   startVmViaBackend,
@@ -44,6 +47,9 @@ describe("electron renderer backend bridge", () => {
           path: "/opt/homebrew/bin/qemu-system-aarch64",
           version: "QEMU emulator version 8.2.0",
           accelerators: ["hvf", "tcg"],
+          spiceSupported: true,
+          source: "system",
+          ready: true,
         },
       }),
     };
@@ -52,6 +58,9 @@ describe("electron renderer backend bridge", () => {
     expect(result.available).toBe(true);
     expect(result.minimumVersionMet).toBe(true);
     expect(result.accelerators).toEqual(["hvf", "tcg"]);
+    expect(result.spiceSupported).toBe(true);
+    expect(result.source).toBe("system");
+    expect(result.ready).toBe(true);
   });
 
   it("returns VM list from list-vms IPC", async () => {
@@ -144,5 +153,52 @@ describe("electron renderer backend bridge", () => {
     expect(opened.uri).toBe("spice://127.0.0.1:5901");
     expect(fetched?.status).toBe("connected");
     expect(calls).toEqual(["open", "get", "close"]);
+  });
+
+  it("passes runtime status/install/clear IPCs", async () => {
+    const calls: string[] = [];
+    const win = getWindow();
+    win.openutm = {
+      getRuntimeStatus: async () => {
+        calls.push("status");
+        return {
+          success: true,
+          data: {
+            source: "managed",
+            path: "/Users/dhruv/.openutm/runtime/10.2.0-openutm.1/bin/qemu-system-x86_64",
+            version: "QEMU emulator version 10.2.0-openutm.1",
+            spiceSupported: true,
+            ready: true,
+            accelerators: ["hvf", "tcg"],
+          },
+        };
+      },
+      installManagedRuntime: async () => {
+        calls.push("install");
+        return {
+          success: true,
+          data: {
+            source: "managed",
+            path: "/Users/dhruv/.openutm/runtime/10.2.0-openutm.1/bin/qemu-system-x86_64",
+            version: "QEMU emulator version 10.2.0-openutm.1",
+            spiceSupported: true,
+            ready: true,
+            accelerators: ["hvf", "tcg"],
+          },
+        };
+      },
+      clearManagedRuntime: async () => {
+        calls.push("clear");
+        return { success: true, data: { success: true } };
+      },
+    };
+
+    const status = await getRuntimeStatusViaBackend();
+    const installed = await installManagedRuntimeViaBackend();
+    await clearManagedRuntimeViaBackend();
+
+    expect(status.source).toBe("managed");
+    expect(installed.spiceSupported).toBe(true);
+    expect(calls).toEqual(["status", "install", "clear"]);
   });
 });

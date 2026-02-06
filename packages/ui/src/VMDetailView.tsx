@@ -15,6 +15,10 @@ export interface VMDetailViewProps {
   onOpenDisplay?: (id: string) => void;
   onCloseDisplay?: (id: string) => void;
   displaySession?: DisplaySession | null;
+  disableStart?: boolean;
+  disableStartReason?: string;
+  disableDisplayOpen?: boolean;
+  disableDisplayOpenReason?: string;
 }
 
 type Tab = 'overview' | 'hardware' | 'drives' | 'network' | 'display';
@@ -28,6 +32,10 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
   onOpenDisplay,
   onCloseDisplay,
   displaySession = null,
+  disableStart = false,
+  disableStartReason,
+  disableDisplayOpen = false,
+  disableDisplayOpenReason,
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -115,7 +123,12 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
 
   const renderDisplay = () => (
     <div className="space-y-4">
-      <DisplayControl onOpenDisplay={() => onOpenDisplay?.(vm.id)} status={vm.status} />
+      <DisplayControl
+        onOpenDisplay={() => onOpenDisplay?.(vm.id)}
+        status={vm.status}
+        disabled={disableDisplayOpen}
+        disabledReason={disableDisplayOpenReason}
+      />
       {displaySession ? (
         <div className="p-3 border rounded-lg space-y-2">
           <p className="font-medium">Session</p>
@@ -153,7 +166,13 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
         </div>
         <div className="flex gap-2">
           {vm.status === VMStatus.Stopped && (
-            <Button onClick={() => onAction(vm.id, 'start')}>Start</Button>
+            <Button
+              onClick={() => onAction(vm.id, 'start')}
+              disabled={disableStart}
+              title={disableStart ? disableStartReason : undefined}
+            >
+              Start
+            </Button>
           )}
           {vm.status === VMStatus.Running && (
             <>

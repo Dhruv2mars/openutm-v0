@@ -15,9 +15,12 @@ import {
   type QemuDetectionResult,
 } from '@openutm/ui';
 import {
+  clearManagedRuntimeViaBackend,
   createVmViaBackend,
   deleteVmViaBackend,
   detectQemuViaBackend,
+  getRuntimeStatusViaBackend,
+  installManagedRuntimeViaBackend,
   listVmsViaBackend,
   pauseVmViaBackend,
   openDisplayViaBackend,
@@ -46,6 +49,7 @@ const DEFAULT_INSTALL_SUGGESTION = `macOS: Install QEMU using Homebrew:
   brew install qemu
 
 Alternatively, download from: https://www.qemu.org/download/#macos`;
+const RUNTIME_BLOCK_REASON = 'Install OpenUTM Runtime to enable SPICE display';
 
 function inferOs(vm: VM): VMListItem['os'] {
   const value = vm.name.toLowerCase();
@@ -60,6 +64,9 @@ function inferOs(vm: VM): VMListItem['os'] {
 function App() {
   const [appState, setAppState] = useState<AppState>('loading');
   const [qemuResult, setQemuResult] = useState<QemuDetectionResult | null>(null);
+  const [runtimeReady, setRuntimeReady] = useState(true);
+  const [runtimeInstalling, setRuntimeInstalling] = useState(false);
+  const [runtimeInstallError, setRuntimeInstallError] = useState<string | null>(null);
   const [vms, setVms] = useState<VM[]>([]);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -83,6 +90,8 @@ function App() {
     try {
       const result = await detectQemuViaBackend();
       setQemuResult(result);
+      setRuntimeReady(result.ready);
+      setRuntimeInstallError(null);
       if (result.available && result.minimumVersionMet) {
         await refreshVms();
         setAppState('ready');
@@ -97,6 +106,7 @@ function App() {
         accelerators: [],
         minimumVersionMet: false,
       });
+      setRuntimeReady(false);
       setAppState('qemu-setup');
       addToast('error', error instanceof Error ? error.message : 'Failed to detect QEMU installation');
     }
@@ -108,6 +118,7 @@ function App() {
 
   const selectedVm = vms.find((vm) => vm.id === selectedId);
   const selectedDisplay = selectedId ? (displaySessions[selectedId] || null) : null;
+  const runtimeBlocked = !runtimeReady;
 
   const vmListItems: VMListItem[] = vms.map((vm) => ({
     id: vm.id,
@@ -135,6 +146,10 @@ function App() {
         }
 
         if (action === 'start') {
+          if (runtimeBlocked) {
+            addToast('error', RUNTIME_BLOCK_REASON);
+            return;
+          }
           await startVmViaBackend(id);
           addToast('success', `${vmName} started`);
         } else {
@@ -147,7 +162,7 @@ function App() {
         addToast('error', error instanceof Error ? error.message : 'VM action failed');
       }
     },
-    [addToast, refreshVms, vms]
+    [addToast, refreshVms, runtimeBlocked, vms]
   );
 
   const handleAction = useCallback(
@@ -158,6 +173,10 @@ function App() {
       try {
         switch (action) {
           case 'start':
+            if (runtimeBlocked) {
+              addToast('error', RUNTIME_BLOCK_REASON);
+              return;
+            }
             await startVmViaBackend(id);
             addToast('success', `${vmName} started`);
             break;
@@ -181,7 +200,7 @@ function App() {
         addToast('error', error instanceof Error ? error.message : 'VM action failed');
       }
     },
-    [addToast, refreshVms, vms]
+    [addToast, refreshVms, runtimeBlocked, vms]
   );
 
   const handleUpdateConfig = useCallback(
@@ -233,6 +252,10 @@ function App() {
   const handleOpenDisplay = useCallback(
     async (vmId: string) => {
       try {
+        if (runtimeBlocked) {
+          addToast('error', RUNTIME_BLOCK_REASON);
+          return;
+        }
         const session = await openDisplayViaBackend(vmId);
         setDisplaySessions((previous) => ({ ...previous, [vmId]: session }));
         addToast('info', `Display endpoint: ${session.uri}`);
@@ -240,8 +263,41 @@ function App() {
         addToast('error', error instanceof Error ? error.message : 'Failed to open display');
       }
     },
-    [addToast]
+    [addToast, runtimeBlocked]
   );
+
+  const handleInstallManagedRuntime = useCallback(async () => {
+    setRuntimeInstalling(true);
+    setRuntimeInstallError(null);
+    try {
+      const status = await installManagedRuntimeViaBackend();
+      setRuntimeReady(status.ready);
+      await checkQemu();
+      if (status.ready) {
+        addToast('success', 'OpenUTM runtime installed');
+      } else {
+        setRuntimeInstallError('Managed runtime installed but SPICE is still unavailable');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to install OpenUTM runtime';
+      setRuntimeInstallError(message);
+      addToast('error', message);
+    } finally {
+      setRuntimeInstalling(false);
+    }
+  }, [addToast, checkQemu]);
+
+  const handleClearManagedRuntime = useCallback(async () => {
+    try {
+      await clearManagedRuntimeViaBackend();
+      const status = await getRuntimeStatusViaBackend();
+      setRuntimeReady(status.ready);
+      await checkQemu();
+      addToast('info', 'Managed runtime cleared');
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to clear managed runtime');
+    }
+  }, [addToast, checkQemu]);
 
   const handleCloseDisplay = useCallback(
     async (vmId: string) => {
@@ -366,6 +422,27 @@ function App() {
     </div>
   );
 
+  const runtimeBanner = runtimeBlocked ? (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
+      <p className="text-sm font-medium text-amber-900">Display blocked: SPICE runtime unavailable.</p>
+      <p className="text-xs text-amber-800">
+        Install OpenUTM Runtime to start VMs and use in-app display.
+      </p>
+      <div className="flex gap-2">
+        <Button onClick={() => void handleInstallManagedRuntime()} disabled={runtimeInstalling}>
+          {runtimeInstalling ? 'Installing OpenUTM Runtime...' : 'Install OpenUTM Runtime'}
+        </Button>
+        <Button variant="secondary" onClick={() => void checkQemu()}>
+          Retry
+        </Button>
+        <Button variant="ghost" onClick={() => void handleClearManagedRuntime()}>
+          Clear Managed Runtime
+        </Button>
+      </div>
+      {runtimeInstallError ? <p className="text-xs text-red-700">{runtimeInstallError}</p> : null}
+    </div>
+  ) : null;
+
   return (
     <MainLayout
       sidebar={sidebar}
@@ -373,26 +450,33 @@ function App() {
       isDarkMode={isDarkMode}
       onThemeToggle={() => setIsDarkMode(!isDarkMode)}
     >
-      {showWizard ? (
-        <VMWizard onComplete={handleWizardComplete} onCancel={() => setShowWizard(false)} />
-      ) : selectedVm ? (
-        <VMDetailView
-          vm={selectedVm}
-          displaySession={selectedDisplay}
-          onOpenDisplay={(id) => void handleOpenDisplay(id)}
-          onCloseDisplay={(id) => void handleCloseDisplay(id)}
-          onUpdateConfig={handleUpdateConfig}
-          onAction={handleAction}
-          onDelete={handleDelete}
-        />
-      ) : (
-        <div className="flex items-center justify-center h-full text-gray-500">
-          <div className="text-center">
-            <p className="text-xl mb-2">No VM Selected</p>
-            <p className="text-sm">Select a VM from the sidebar or create a new one</p>
+      <div className="space-y-4">
+        {runtimeBanner}
+        {showWizard ? (
+          <VMWizard onComplete={handleWizardComplete} onCancel={() => setShowWizard(false)} />
+        ) : selectedVm ? (
+          <VMDetailView
+            vm={selectedVm}
+            displaySession={selectedDisplay}
+            onOpenDisplay={(id) => void handleOpenDisplay(id)}
+            onCloseDisplay={(id) => void handleCloseDisplay(id)}
+            onUpdateConfig={handleUpdateConfig}
+            onAction={handleAction}
+            onDelete={handleDelete}
+            disableStart={runtimeBlocked}
+            disableStartReason={RUNTIME_BLOCK_REASON}
+            disableDisplayOpen={runtimeBlocked}
+            disableDisplayOpenReason={RUNTIME_BLOCK_REASON}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full text-gray-500">
+            <div className="text-center">
+              <p className="text-xl mb-2">No VM Selected</p>
+              <p className="text-sm">Select a VM from the sidebar or create a new one</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </MainLayout>
   );
 }

@@ -2,12 +2,13 @@ import { ChildProcess, spawn as defaultSpawn } from 'child_process';
 import { DisplayProtocol, DisplaySessionStatus, type DisplaySession } from '@openutm/shared-types';
 import { getVMConfig } from '../config';
 import { connectQMP as defaultConnectQMP } from './qmp';
+import { detectQemu as defaultDetectQemu } from './detector';
 
 interface VMProcess {
   id: string;
   process: ChildProcess;
   qmpSocket?: string;
-  spicePort: number;
+  spicePort?: number;
 }
 
 interface VMConfig {
@@ -25,6 +26,7 @@ const pausedVMs = new Set<string>();
 const displaySessions = new Map<string, DisplaySession>();
 let spawnFn = defaultSpawn;
 let connectQMPFn = defaultConnectQMP;
+let detectQemuFn = defaultDetectQemu;
 
 export function setSpawnFn(fn: typeof defaultSpawn): void {
   spawnFn = fn;
@@ -32,6 +34,10 @@ export function setSpawnFn(fn: typeof defaultSpawn): void {
 
 export function setConnectQMPFn(fn: typeof defaultConnectQMP): void {
   connectQMPFn = fn;
+}
+
+export function setDetectQemuFn(fn: typeof defaultDetectQemu): void {
+  detectQemuFn = fn;
 }
 
 export function resetRuntimeStateForTests(): void {
@@ -69,8 +75,23 @@ export async function startVM(vmId: string, config?: VMConfig): Promise<{ vmId: 
       }
     }
 
-    const args = buildQemuArgs(vmConfig);
-    const qemuProcess = spawnFn('qemu-system-x86_64', args);
+    const detection = await detectQemuFn();
+    if (!detection.spiceSupported) {
+      throw new Error('SPICE runtime unavailable. Install OpenUTM Runtime to continue.');
+    }
+
+    const detectedAccelerators = detection.accelerators.length > 0 ? detection.accelerators : ['tcg'];
+    const accelerator =
+      vmConfig.accelerator && detectedAccelerators.includes(vmConfig.accelerator)
+        ? vmConfig.accelerator
+        : detectedAccelerators[0];
+    const runtimeConfig: VMConfig = {
+      ...vmConfig,
+      accelerator,
+    };
+
+    const args = buildQemuArgs(runtimeConfig);
+    const qemuProcess = spawnFn(detection.path, args, { stdio: 'ignore' });
 
     if (!qemuProcess.pid) {
       throw new Error('Failed to spawn QEMU process');
@@ -167,6 +188,7 @@ function buildQemuArgs(config: VMConfig): string[] {
     '-m', config.memory.toString(),
     '-smp', `cores=${config.cores}`,
     '-hda', config.disk,
+    '-display', 'none',
     '-spice', `port=${spicePort},addr=127.0.0.1,disable-ticketing=on`,
   ];
 
@@ -205,6 +227,9 @@ export async function openDisplaySession(vmId: string): Promise<DisplaySession> 
   const vm = runningVMs.get(vmId);
   if (!vm) {
     throw new Error(`VM ${vmId} not running`);
+  }
+  if (!vm.spicePort) {
+    throw new Error('SPICE display unavailable: active runtime is not SPICE-capable');
   }
 
   const existing = displaySessions.get(vmId);

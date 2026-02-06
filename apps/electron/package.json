@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src electron-src scripts vite.config.ts electron-env.d.ts --ext .ts,.tsx,.mjs --max-warnings=0",
     "test": "bun test",
+    "verify:workflow": "node scripts/verify-workflow.mjs",
     "pack": "bun run build && electron-builder --dir",
     "dist": "bun run build && electron-builder"
   },

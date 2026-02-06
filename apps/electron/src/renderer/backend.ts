@@ -14,7 +14,23 @@ export interface DetectQemuPayload {
   path: string;
   version: string;
   accelerators: string[];
+  spiceSupported: boolean;
+  source: RuntimeSource;
+  ready: boolean;
 }
+
+export type RuntimeSource = "managed" | "system";
+
+export interface RuntimeStatus {
+  source: RuntimeSource;
+  path: string;
+  version: string;
+  accelerators: string[];
+  spiceSupported: boolean;
+  ready: boolean;
+}
+
+export type DetectionResult = QemuDetectionResult & RuntimeStatus;
 
 export interface CreateVmRequest {
   name: string;
@@ -34,6 +50,9 @@ export interface UpdateVmRequest {
 
 interface ElectronBridge {
   detectQemu: () => Promise<IpcResult<DetectQemuPayload>>;
+  getRuntimeStatus: () => Promise<IpcResult<RuntimeStatus>>;
+  installManagedRuntime: () => Promise<IpcResult<RuntimeStatus>>;
+  clearManagedRuntime: () => Promise<IpcResult<{ success: boolean }>>;
   listVms: () => Promise<IpcResult<VM[]>>;
   createVm: (request: CreateVmRequest) => Promise<IpcResult<VM>>;
   updateVm: (request: UpdateVmRequest) => Promise<IpcResult<VM>>;
@@ -81,17 +100,51 @@ function normalizeVm(vm: VM): VM {
   };
 }
 
-export async function detectQemuViaBackend(): Promise<QemuDetectionResult> {
+export async function detectQemuViaBackend(): Promise<DetectionResult> {
   const bridge = getBridge();
   const data = unwrapResult(await bridge.detectQemu(), "Failed to detect QEMU");
   const major = parseMajor(data.version || null);
+  const spiceSupported = Boolean(data.spiceSupported);
+  const source: RuntimeSource = data.source || "system";
+  const ready = data.ready !== undefined ? Boolean(data.ready) : spiceSupported;
   return {
     available: true,
     path: data.path,
     version: data.version,
     accelerators: data.accelerators,
     minimumVersionMet: major !== null ? major >= 6 : false,
+    spiceSupported,
+    source,
+    ready,
   };
+}
+
+function normalizeRuntimeStatus(status: RuntimeStatus): RuntimeStatus {
+  return {
+    source: status.source,
+    path: status.path,
+    version: status.version,
+    accelerators: status.accelerators || [],
+    spiceSupported: Boolean(status.spiceSupported),
+    ready: Boolean(status.ready),
+  };
+}
+
+export async function getRuntimeStatusViaBackend(): Promise<RuntimeStatus> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.getRuntimeStatus(), "Failed to get runtime status");
+  return normalizeRuntimeStatus(data);
+}
+
+export async function installManagedRuntimeViaBackend(): Promise<RuntimeStatus> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.installManagedRuntime(), "Failed to install OpenUTM runtime");
+  return normalizeRuntimeStatus(data);
+}
+
+export async function clearManagedRuntimeViaBackend(): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.clearManagedRuntime(), "Failed to clear managed runtime");
 }
 
 export async function listVmsViaBackend(): Promise<VM[]> {

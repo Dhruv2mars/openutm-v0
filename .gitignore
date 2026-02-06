@@ -50,6 +50,7 @@ pnpm-debug.log*
 # Testing
 .nyc_output/
 coverage/
+apps/electron/verification/
 
 # Misc
 .cache/

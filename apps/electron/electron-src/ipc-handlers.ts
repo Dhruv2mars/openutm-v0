@@ -1,7 +1,11 @@
 import { ipcMain } from 'electron';
-import { detectQemu } from './qemu/detector';
+import { detectQemu, getRuntimeStatus } from './qemu/detector';
 import { randomUUID } from 'crypto';
 import { VMStatus } from '@openutm/shared-types';
+import {
+  clearManagedRuntimeInstallation,
+  installManagedRuntime,
+} from './qemu/runtime-install';
 import {
   startVM,
   stopVM,
@@ -76,6 +80,37 @@ export function registerIpcHandlers() {
     try {
       const qemuInfo = await detectQemu();
       return { success: true, data: qemuInfo };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle('get-runtime-status', async () => {
+    try {
+      const status = await getRuntimeStatus();
+      return { success: true, data: status };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle('install-managed-runtime', async () => {
+    try {
+      await installManagedRuntime();
+      const status = await getRuntimeStatus();
+      return { success: true, data: status };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle('clear-managed-runtime', async () => {
+    try {
+      const result = await clearManagedRuntimeInstallation();
+      return { success: true, data: result };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       return { success: false, error: message };

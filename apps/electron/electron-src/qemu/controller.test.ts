@@ -77,6 +77,14 @@ describe('VM Process Controller', () => {
     mockPid = 12345;
     controller.setSpawnFn(spawnMock as any);
     controller.setConnectQMPFn(connectQMPMock as any);
+    controller.setDetectQemuFn((async () => ({
+      path: '/opt/homebrew/bin/qemu-system-aarch64',
+      version: 'QEMU emulator version 10.2.0',
+      accelerators: ['hvf', 'tcg'],
+      spiceSupported: true,
+      source: 'system',
+      ready: true,
+    })) as any);
   });
 
   describe('startVM()', () => {
@@ -135,6 +143,21 @@ describe('VM Process Controller', () => {
       expect(args[spiceIndex + 1]).toContain('disable-ticketing=on');
       expect(args[spiceIndex + 1]).toContain('addr=127.0.0.1');
       expect(args[spiceIndex + 1]).toContain(`port=${controller.resolveSpicePort('vm-test-1')}`);
+    });
+
+    it('blocks VM start when active runtime is not SPICE-capable', async () => {
+      controller.setDetectQemuFn((async () => ({
+        path: '/opt/homebrew/bin/qemu-system-aarch64',
+        version: 'QEMU emulator version 10.2.0',
+        accelerators: ['tcg'],
+        spiceSupported: false,
+        source: 'system',
+        ready: false,
+      })) as any);
+
+      await expect(controller.startVM('vm-test-1', testConfigs['vm-test-1'])).rejects.toThrow(
+        'SPICE runtime unavailable',
+      );
     });
   });
 
