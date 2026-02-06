@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import type { VM } from "@openutm/shared-types";
 import {
+  closeDisplayViaBackend,
   createVmViaBackend,
   detectQemuViaBackend,
+  getDisplayViaBackend,
   listVmsViaBackend,
+  openDisplayViaBackend,
   startVmViaBackend,
   stopVmViaBackend,
 } from "./backend";
@@ -105,5 +108,41 @@ describe("electron renderer backend bridge", () => {
     await stopVmViaBackend("vm-1");
 
     expect(calls).toEqual(["create", "start", "stop"]);
+  });
+
+  it("passes open/get/close display through IPC", async () => {
+    const calls: string[] = [];
+    const session = {
+      vmId: "550e8400-e29b-41d4-a716-446655440000",
+      protocol: "spice",
+      host: "127.0.0.1",
+      port: 5901,
+      uri: "spice://127.0.0.1:5901",
+      status: "connected",
+      reconnectAttempts: 0,
+    };
+    const win = getWindow();
+    win.openutm = {
+      openDisplay: async () => {
+        calls.push("open");
+        return { success: true, data: session };
+      },
+      getDisplay: async () => {
+        calls.push("get");
+        return { success: true, data: session };
+      },
+      closeDisplay: async () => {
+        calls.push("close");
+        return { success: true, data: { success: true } };
+      },
+    };
+
+    const opened = await openDisplayViaBackend(session.vmId);
+    const fetched = await getDisplayViaBackend(session.vmId);
+    await closeDisplayViaBackend(session.vmId);
+
+    expect(opened.uri).toBe("spice://127.0.0.1:5901");
+    expect(fetched?.status).toBe("connected");
+    expect(calls).toEqual(["open", "get", "close"]);
   });
 });

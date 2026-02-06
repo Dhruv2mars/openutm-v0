@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { VM, VMStatus } from '@openutm/shared-types';
+import type { DisplaySession } from '@openutm/shared-types';
 import { Button } from './Button';
+import { DisplayControl } from './DisplayControl';
 import { Input } from './Input';
 import { VMStatusBadge } from './VMStatusBadge';
 
@@ -10,9 +12,12 @@ export interface VMDetailViewProps {
   onUpdateConfig: (id: string, config: any) => void;
   onAction: (id: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'shutdown') => void;
   onDelete: (id: string) => void;
+  onOpenDisplay?: (id: string) => void;
+  onCloseDisplay?: (id: string) => void;
+  displaySession?: DisplaySession | null;
 }
 
-type Tab = 'overview' | 'hardware' | 'drives' | 'network';
+type Tab = 'overview' | 'hardware' | 'drives' | 'network' | 'display';
 
 export const VMDetailView: React.FC<VMDetailViewProps> = ({
   vm,
@@ -20,6 +25,9 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
   onUpdateConfig,
   onAction,
   onDelete,
+  onOpenDisplay,
+  onCloseDisplay,
+  displaySession = null,
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -105,6 +113,35 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
     </div>
   );
 
+  const renderDisplay = () => (
+    <div className="space-y-4">
+      <DisplayControl onOpenDisplay={() => onOpenDisplay?.(vm.id)} status={vm.status} />
+      {displaySession ? (
+        <div className="p-3 border rounded-lg space-y-2">
+          <p className="font-medium">Session</p>
+          <p className="text-sm text-gray-500">Protocol: {displaySession.protocol}</p>
+          <p className="text-sm text-gray-500">Endpoint: {displaySession.uri}</p>
+          <p className="text-sm text-gray-500">Status: {displaySession.status}</p>
+          <p className="text-sm text-gray-500">Reconnect attempts: {displaySession.reconnectAttempts}</p>
+          {displaySession.lastError ? (
+            <p className="text-sm text-red-600">Last error: {displaySession.lastError}</p>
+          ) : null}
+          <Button
+            variant="secondary"
+            onClick={() => onCloseDisplay?.(vm.id)}
+            disabled={displaySession.status === 'disconnected'}
+          >
+            Close Display
+          </Button>
+        </div>
+      ) : (
+        <div className="p-3 border rounded-lg">
+          <p className="text-sm text-gray-500">No active display session.</p>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -133,7 +170,7 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
 
       <div className="border-b">
         <nav className="flex gap-4">
-          {(['overview', 'hardware', 'drives', 'network'] as Tab[]).map((tab) => (
+          {(['overview', 'hardware', 'drives', 'network', 'display'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -154,6 +191,7 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
         {activeTab === 'hardware' && renderHardware()}
         {activeTab === 'drives' && renderDrives()}
         {activeTab === 'network' && renderNetwork()}
+        {activeTab === 'display' && renderDisplay()}
       </div>
 
       {showDeleteConfirm && (

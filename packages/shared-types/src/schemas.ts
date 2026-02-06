@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { Platform, Accelerator, VMStatus } from './types.js';
+import { DisplayProtocol, DisplaySessionStatus, Platform, Accelerator, VMStatus } from './types.js';
 
 export const PlatformSchema = z.enum([
   Platform.macOS,
@@ -24,6 +24,17 @@ export const VMStatusSchema = z.enum([
   VMStatus.Running,
   VMStatus.Paused,
   VMStatus.Error,
+]);
+
+export const DisplayProtocolSchema = z.enum([
+  DisplayProtocol.Spice,
+]);
+
+export const DisplaySessionStatusSchema = z.enum([
+  DisplaySessionStatus.Connecting,
+  DisplaySessionStatus.Connected,
+  DisplaySessionStatus.Disconnected,
+  DisplaySessionStatus.Error,
 ]);
 
 export const DiskSchema = z.object({
@@ -51,6 +62,17 @@ export const VMSchema = z.object({
   config: VMConfigSchema,
 });
 
+export const DisplaySessionSchema = z.object({
+  vmId: z.string().uuid('VM ID must be a valid UUID'),
+  protocol: DisplayProtocolSchema,
+  host: z.string().min(1, 'Display host cannot be empty'),
+  port: z.number().int().positive('Display port must be positive').max(65535, 'Display port out of range'),
+  uri: z.string().min(1, 'Display URI cannot be empty'),
+  status: DisplaySessionStatusSchema,
+  reconnectAttempts: z.number().int().nonnegative('Reconnect attempts cannot be negative'),
+  lastError: z.string().min(1).optional(),
+});
+
 export const SystemInfoSchema = z.object({
   platform: PlatformSchema,
   accelerator: AcceleratorSchema,
@@ -60,6 +82,7 @@ export const SystemInfoSchema = z.object({
 
 // Type inference from schemas (useful for type-safe schema validation)
 export type ValidatedVM = z.infer<typeof VMSchema>;
+export type ValidatedDisplaySession = z.infer<typeof DisplaySessionSchema>;
 export type ValidatedVMConfig = z.infer<typeof VMConfigSchema>;
 export type ValidatedDisk = z.infer<typeof DiskSchema>;
 export type ValidatedNetworkConfig = z.infer<typeof NetworkConfigSchema>;

@@ -5,15 +5,16 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::config::{ConfigStore, VMRecord};
-use crate::qemu::{self, Accelerator, DriveConfig, MachineType, NetdevConfig, QemuCommand};
+use crate::qemu::{self, Accelerator, DisplayConfig, DriveConfig, MachineType, NetdevConfig, QemuCommand};
 use crate::storage::DiskManager;
-use crate::{platform, QemuInfo, VMConfig, VMStatus, VM};
+use crate::{platform, DisplaySession, QemuInfo, VMConfig, VMStatus, VM};
 
 pub struct CommandState {
     pub config_store: ConfigStore,
     pub disk_manager: DiskManager,
     pub storage_dir: PathBuf,
     pub qemu_controller: tokio::sync::Mutex<qemu::QemuController>,
+    pub display_sessions: tokio::sync::Mutex<HashMap<String, DisplaySession>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -103,7 +104,19 @@ fn disk_path(storage_dir: &PathBuf, vm_id: &str) -> String {
         .to_string()
 }
 
+fn resolve_spice_port(vm_id: &str) -> u16 {
+    let mut hash: u16 = 0;
+    for byte in vm_id.as_bytes() {
+        hash = (hash.wrapping_mul(31).wrapping_add(*byte as u16)) % 1000;
+    }
+    5900 + hash
+}
+
 fn build_start_args(vm: &VMRecord, disk: &str, qmp_socket: &str) -> std::result::Result<Vec<String>, String> {
+    let mut display_options = HashMap::new();
+    display_options.insert("addr".to_string(), "127.0.0.1".to_string());
+    display_options.insert("disable-ticketing".to_string(), "on".to_string());
+
     let command = QemuCommand::new()
         .machine(MachineType::Q35)
         .accel(default_accelerator())
@@ -121,6 +134,11 @@ fn build_start_args(vm: &VMRecord, disk: &str, qmp_socket: &str) -> std::result:
             id: "net0".to_string(),
             kind: "user".to_string(),
             options: HashMap::new(),
+        })
+        .display(DisplayConfig {
+            kind: "spice".to_string(),
+            port: Some(resolve_spice_port(&vm.id)),
+            options: display_options,
         })
         .usb_tablet();
 
@@ -148,6 +166,20 @@ fn update_vm_status(config_store: &ConfigStore, vm_id: &str, status: VMStatus) -
     let mut record = fetch_vm_or_err(config_store, vm_id)?;
     record.status = status_to_storage(&status).to_string();
     config_store.update_vm(&record).map_err(|e| e.to_string())
+}
+
+fn build_display_session(vm_id: &str, status: &str, reconnect_attempts: u32, last_error: Option<String>) -> DisplaySession {
+    let port = resolve_spice_port(vm_id);
+    DisplaySession {
+        vm_id: vm_id.to_string(),
+        protocol: "spice".to_string(),
+        host: "127.0.0.1".to_string(),
+        port,
+        uri: format!("spice://127.0.0.1:{}", port),
+        status: status.to_string(),
+        reconnect_attempts,
+        last_error,
+    }
 }
 
 /// Detect QEMU binary and get system accelerator capabilities
@@ -245,6 +277,11 @@ pub async fn start_vm(state: State<'_, CommandState>, id: String) -> std::result
         .map_err(|e| e.to_string())?;
 
     update_vm_status(&state.config_store, &id, VMStatus::Running)?;
+    let mut sessions = state.display_sessions.lock().await;
+    if let Some(existing) = sessions.get_mut(&id) {
+        existing.status = "connected".to_string();
+        existing.last_error = None;
+    }
     Ok(())
 }
 
@@ -259,6 +296,11 @@ pub async fn stop_vm(state: State<'_, CommandState>, id: String) -> std::result:
     controller.stop_vm(&id).await.map_err(|e| e.to_string())?;
 
     update_vm_status(&state.config_store, &id, VMStatus::Stopped)?;
+    let mut sessions = state.display_sessions.lock().await;
+    if let Some(existing) = sessions.get_mut(&id) {
+        existing.status = "disconnected".to_string();
+        existing.last_error = Some("VM stopped".to_string());
+    }
     Ok(())
 }
 
@@ -327,6 +369,7 @@ pub async fn delete_vm(state: State<'_, CommandState>, id: String) -> std::resul
 
     state.disk_manager.delete_disk(&id).await.map_err(|e| e.to_string())?;
     state.config_store.delete_vm(&id).map_err(|e| e.to_string())?;
+    state.display_sessions.lock().await.remove(&id);
 
     Ok(())
 }
@@ -335,6 +378,74 @@ pub async fn delete_vm(state: State<'_, CommandState>, id: String) -> std::resul
 #[tauri::command]
 pub async fn get_platform_info() -> std::result::Result<String, String> {
     platform::get_platform_info().map_err(|e| e.to_string())
+}
+
+/// Open display session for a running VM
+#[tauri::command]
+pub async fn open_display(state: State<'_, CommandState>, id: String) -> std::result::Result<DisplaySession, String> {
+    if id.trim().is_empty() {
+        return Err("VM ID cannot be empty".to_string());
+    }
+
+    let _ = fetch_vm_or_err(&state.config_store, &id)?;
+    let controller = state.qemu_controller.lock().await;
+    if !controller.is_running(&id) {
+        return Err(format!("VM {} not running", id));
+    }
+    drop(controller);
+
+    let mut sessions = state.display_sessions.lock().await;
+    if let Some(existing) = sessions.get_mut(&id) {
+        if existing.status == "disconnected" || existing.status == "error" {
+            existing.status = "connected".to_string();
+            existing.reconnect_attempts += 1;
+            existing.last_error = None;
+        }
+        return Ok(existing.clone());
+    }
+
+    let session = build_display_session(&id, "connected", 0, None);
+    sessions.insert(id, session.clone());
+    Ok(session)
+}
+
+/// Get display session by VM ID
+#[tauri::command]
+pub async fn get_display(state: State<'_, CommandState>, id: String) -> std::result::Result<Option<DisplaySession>, String> {
+    if id.trim().is_empty() {
+        return Err("VM ID cannot be empty".to_string());
+    }
+
+    let is_running = {
+        let controller = state.qemu_controller.lock().await;
+        controller.is_running(&id)
+    };
+
+    let mut sessions = state.display_sessions.lock().await;
+    if let Some(existing) = sessions.get_mut(&id) {
+        if !is_running && existing.status != "disconnected" {
+            existing.status = "disconnected".to_string();
+            existing.last_error = Some("VM not running".to_string());
+        }
+        return Ok(Some(existing.clone()));
+    }
+
+    Ok(None)
+}
+
+/// Close display session
+#[tauri::command]
+pub async fn close_display(state: State<'_, CommandState>, id: String) -> std::result::Result<(), String> {
+    if id.trim().is_empty() {
+        return Err("VM ID cannot be empty".to_string());
+    }
+
+    let mut sessions = state.display_sessions.lock().await;
+    if let Some(existing) = sessions.get_mut(&id) {
+        existing.status = "disconnected".to_string();
+        existing.last_error = Some("Display session closed".to_string());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -399,5 +510,23 @@ mod tests {
         assert!(joined.contains("-qmp"));
         assert!(joined.contains("openutm-qmp-vm-1.sock"));
         assert!(joined.contains("-name Fedora VM"));
+        assert!(joined.contains("-spice"));
+        assert!(joined.contains(&format!("port={}", resolve_spice_port("vm-1"))));
+    }
+
+    #[test]
+    fn test_resolve_spice_port_is_stable_and_in_range() {
+        let port = resolve_spice_port("vm-1");
+        assert_eq!(port, resolve_spice_port("vm-1"));
+        assert!((5900..=6899).contains(&port));
+    }
+
+    #[test]
+    fn test_build_display_session_defaults() {
+        let session = build_display_session("vm-1", "connected", 0, None);
+        assert_eq!(session.protocol, "spice");
+        assert!(session.uri.starts_with("spice://127.0.0.1:"));
+        assert_eq!(session.status, "connected");
+        assert_eq!(session.reconnect_attempts, 0);
     }
 }

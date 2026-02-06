@@ -91,6 +91,10 @@ impl QemuController {
             .cloned()
             .collect()
     }
+
+    pub fn is_running(&self, vm_id: &str) -> bool {
+        self.running_vms.lock().unwrap().contains_key(vm_id)
+    }
 }
 
 #[cfg(test)]
@@ -312,5 +316,18 @@ mod tests {
             .await;
         assert!(start2.is_ok());
     }
-}
 
+    #[tokio::test]
+    async fn test_is_running_reflects_runtime_state() {
+        let mut controller = QemuController::new("echo".to_string());
+        assert!(!controller.is_running("vm-1"));
+
+        let _ = controller
+            .start_vm("vm-1", vec!["test".to_string()], None)
+            .await;
+        assert!(controller.is_running("vm-1"));
+
+        let _ = controller.stop_vm("vm-1").await;
+        assert!(!controller.is_running("vm-1"));
+    }
+}

@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { VMStatus } from "@openutm/shared-types";
 import type { VM } from "@openutm/shared-types";
-import { __setInvokeForTests, createVmViaBackend, detectQemuViaBackend, listVmsViaBackend } from "./backend";
+import {
+  __setInvokeForTests,
+  closeDisplayViaBackend,
+  createVmViaBackend,
+  detectQemuViaBackend,
+  getDisplayViaBackend,
+  listVmsViaBackend,
+  openDisplayViaBackend,
+} from "./backend";
 
 describe("tauri renderer backend bridge", () => {
   beforeEach(() => {
@@ -108,6 +116,33 @@ describe("tauri renderer backend bridge", () => {
     });
 
     expect(vm.id).toBe("vm-2");
+    expect(invoke).toHaveBeenCalled();
+  });
+
+  it("passes open/get/close display via invoke", async () => {
+    const session = {
+      vmId: "550e8400-e29b-41d4-a716-446655440000",
+      protocol: "spice",
+      host: "127.0.0.1",
+      port: 5901,
+      uri: "spice://127.0.0.1:5901",
+      status: "connected",
+      reconnectAttempts: 0,
+    };
+    const invoke = mock(async (cmd: string) => {
+      if (cmd === "open_display") return session;
+      if (cmd === "get_display") return session;
+      if (cmd === "close_display") return;
+      throw new Error("unexpected command");
+    });
+    __setInvokeForTests(invoke);
+
+    const opened = await openDisplayViaBackend(session.vmId);
+    const fetched = await getDisplayViaBackend(session.vmId);
+    await closeDisplayViaBackend(session.vmId);
+
+    expect(opened.status).toBe("connected");
+    expect(fetched?.uri).toBe("spice://127.0.0.1:5901");
     expect(invoke).toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { VMStatus } from '@openutm/shared-types';
 import type { VM } from '@openutm/shared-types';
+import type { DisplaySession } from '@openutm/shared-types';
 import {
   MainLayout,
   VMListSidebar,
@@ -19,6 +20,9 @@ import {
   detectQemuViaBackend,
   listVmsViaBackend,
   pauseVmViaBackend,
+  openDisplayViaBackend,
+  getDisplayViaBackend,
+  closeDisplayViaBackend,
   resumeVmViaBackend,
   startVmViaBackend,
   stopVmViaBackend,
@@ -60,6 +64,7 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [displaySessions, setDisplaySessions] = useState<Record<string, DisplaySession | null>>({});
   const { addToast } = useToast();
 
   const refreshVms = useCallback(async () => {
@@ -102,6 +107,7 @@ function App() {
   }, [checkQemu]);
 
   const selectedVm = vms.find((vm) => vm.id === selectedId);
+  const selectedDisplay = selectedId ? (displaySessions[selectedId] || null) : null;
 
   const vmListItems: VMListItem[] = vms.map((vm) => ({
     id: vm.id,
@@ -201,6 +207,11 @@ function App() {
       try {
         const vm = vms.find((item) => item.id === id);
         await deleteVmViaBackend(id);
+        setDisplaySessions((previous) => {
+          const next = { ...previous };
+          delete next[id];
+          return next;
+        });
         await refreshVms();
         addToast('success', `${vm?.name || 'VM'} deleted`);
       } catch (error) {
@@ -209,6 +220,69 @@ function App() {
     },
     [addToast, refreshVms, vms]
   );
+
+  const syncDisplaySession = useCallback(async (vmId: string) => {
+    try {
+      const session = await getDisplayViaBackend(vmId);
+      setDisplaySessions((previous) => ({ ...previous, [vmId]: session }));
+    } catch {
+      setDisplaySessions((previous) => ({ ...previous, [vmId]: null }));
+    }
+  }, []);
+
+  const handleOpenDisplay = useCallback(
+    async (vmId: string) => {
+      try {
+        const session = await openDisplayViaBackend(vmId);
+        setDisplaySessions((previous) => ({ ...previous, [vmId]: session }));
+        addToast('info', `Display endpoint: ${session.uri}`);
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to open display');
+      }
+    },
+    [addToast]
+  );
+
+  const handleCloseDisplay = useCallback(
+    async (vmId: string) => {
+      try {
+        await closeDisplayViaBackend(vmId);
+        await syncDisplaySession(vmId);
+        addToast('info', 'Display session closed');
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to close display');
+      }
+    },
+    [addToast, syncDisplaySession]
+  );
+
+  useEffect(() => {
+    if (!selectedId) {
+      return;
+    }
+
+    let active = true;
+    const tick = async () => {
+      try {
+        const session = await getDisplayViaBackend(selectedId);
+        if (!active) return;
+        setDisplaySessions((previous) => ({ ...previous, [selectedId]: session }));
+      } catch {
+        if (!active) return;
+        setDisplaySessions((previous) => ({ ...previous, [selectedId]: null }));
+      }
+    };
+
+    void tick();
+    const timer = setInterval(() => {
+      void tick();
+    }, 2000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [selectedId]);
 
   const handleWizardComplete = useCallback(
     async (wizardConfig: WizardConfig) => {
@@ -304,6 +378,9 @@ function App() {
       ) : selectedVm ? (
         <VMDetailView
           vm={selectedVm}
+          displaySession={selectedDisplay}
+          onOpenDisplay={(id) => void handleOpenDisplay(id)}
+          onCloseDisplay={(id) => void handleCloseDisplay(id)}
           onUpdateConfig={handleUpdateConfig}
           onAction={handleAction}
           onDelete={handleDelete}

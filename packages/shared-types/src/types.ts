@@ -32,6 +32,23 @@ export enum VMStatus {
 }
 
 /**
+ * Display protocol used for VM graphics session
+ */
+export enum DisplayProtocol {
+  Spice = 'spice',
+}
+
+/**
+ * Display session lifecycle state
+ */
+export enum DisplaySessionStatus {
+  Connecting = 'connecting',
+  Connected = 'connected',
+  Disconnected = 'disconnected',
+  Error = 'error',
+}
+
+/**
  * Virtual disk configuration
  */
 export interface Disk {
@@ -66,6 +83,20 @@ export interface VM {
   name: string;
   status: VMStatus;
   config: VMConfig;
+}
+
+/**
+ * Display session descriptor for a running VM
+ */
+export interface DisplaySession {
+  vmId: string;
+  protocol: DisplayProtocol;
+  host: string;
+  port: number;
+  uri: string;
+  status: DisplaySessionStatus;
+  reconnectAttempts: number;
+  lastError?: string;
 }
 
 /**

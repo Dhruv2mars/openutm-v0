@@ -1,5 +1,7 @@
 import { VMStatus } from "@openutm/shared-types";
+import { DisplaySessionSchema } from "@openutm/shared-types";
 import type { VM } from "@openutm/shared-types";
+import type { DisplaySession } from "@openutm/shared-types";
 import type { QemuDetectionResult } from "@openutm/ui";
 
 export interface CreateVmRequest {
@@ -38,6 +40,17 @@ interface RawVm {
   name: string;
   status: string;
   config: RawVmConfig;
+}
+
+interface RawDisplaySession {
+  vmId: string;
+  protocol: string;
+  host: string;
+  port: number;
+  uri: string;
+  status: string;
+  reconnectAttempts: number;
+  lastError?: string | null;
 }
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -164,4 +177,31 @@ export async function pauseVmViaBackend(id: string): Promise<void> {
 export async function resumeVmViaBackend(id: string): Promise<void> {
   const invoke = await getInvoke();
   await invoke<void>("resume_vm", { id });
+}
+
+function normalizeDisplaySession(raw: RawDisplaySession): DisplaySession {
+  return DisplaySessionSchema.parse({
+    ...raw,
+    lastError: raw.lastError || undefined,
+  });
+}
+
+export async function openDisplayViaBackend(id: string): Promise<DisplaySession> {
+  const invoke = await getInvoke();
+  const raw = await invoke<RawDisplaySession>("open_display", { id });
+  return normalizeDisplaySession(raw);
+}
+
+export async function getDisplayViaBackend(id: string): Promise<DisplaySession | null> {
+  const invoke = await getInvoke();
+  const raw = await invoke<RawDisplaySession | null>("get_display", { id });
+  if (!raw) {
+    return null;
+  }
+  return normalizeDisplaySession(raw);
+}
+
+export async function closeDisplayViaBackend(id: string): Promise<void> {
+  const invoke = await getInvoke();
+  await invoke<void>("close_display", { id });
 }

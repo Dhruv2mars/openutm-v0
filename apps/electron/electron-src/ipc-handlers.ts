@@ -2,7 +2,16 @@ import { ipcMain } from 'electron';
 import { detectQemu } from './qemu/detector';
 import { randomUUID } from 'crypto';
 import { VMStatus } from '@openutm/shared-types';
-import { startVM, stopVM, pauseVM, resumeVM, getVmRuntimeStatus } from './qemu/controller';
+import {
+  startVM,
+  stopVM,
+  pauseVM,
+  resumeVM,
+  getVmRuntimeStatus,
+  openDisplaySession,
+  getDisplaySession,
+  closeDisplaySession,
+} from './qemu/controller';
 import { createVMConfig, deleteVMConfig, getVMConfig, listVMs, updateVMConfig } from './config';
 import { createDiskImage, deleteDiskImage } from './storage';
 
@@ -204,6 +213,36 @@ export function registerIpcHandlers() {
       await deleteVMConfig(vmId);
 
       const result = { success: true };
+      return { success: true, data: result };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle('open-display', async (_event, vmId: string) => {
+    try {
+      const session = await openDisplaySession(vmId);
+      return { success: true, data: session };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle('get-display', async (_event, vmId: string) => {
+    try {
+      const session = getDisplaySession(vmId);
+      return { success: true, data: session };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle('close-display', async (_event, vmId: string) => {
+    try {
+      const result = closeDisplaySession(vmId);
       return { success: true, data: result };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';

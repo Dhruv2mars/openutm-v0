@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { VMDetailView } from './VMDetailView';
-import { VM, VMStatus } from '@openutm/shared-types';
+import { DisplayProtocol, DisplaySessionStatus, VM, VMStatus } from '@openutm/shared-types';
 
 const mockVM: VM = {
   id: 'test-vm-1',
@@ -18,6 +18,16 @@ const mockVM: VM = {
 };
 
 describe('VMDetailView', () => {
+  const displaySession = {
+    vmId: mockVM.id,
+    protocol: DisplayProtocol.Spice,
+    host: '127.0.0.1',
+    port: 5901,
+    uri: 'spice://127.0.0.1:5901',
+    status: DisplaySessionStatus.Connected,
+    reconnectAttempts: 1,
+  };
+
   it('displays VM info correctly', () => {
     render(
       <VMDetailView 
@@ -184,5 +194,68 @@ describe('VMDetailView', () => {
 
     expect(screen.queryByText('Are you sure?')).not.toBeInTheDocument();
     expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('opens and closes display session from display tab', () => {
+    const onOpenDisplay = vi.fn();
+    const onCloseDisplay = vi.fn();
+    render(
+      <VMDetailView
+        vm={{ ...mockVM, status: VMStatus.Running }}
+        displaySession={displaySession}
+        onOpenDisplay={onOpenDisplay}
+        onCloseDisplay={onCloseDisplay}
+        onUpdateConfig={vi.fn()}
+        onAction={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Display'));
+    expect(screen.getByText('Endpoint: spice://127.0.0.1:5901')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /open display/i }));
+    fireEvent.click(screen.getByText('Close Display'));
+    expect(onOpenDisplay).toHaveBeenCalledWith(mockVM.id);
+    expect(onCloseDisplay).toHaveBeenCalledWith(mockVM.id);
+  });
+
+  it('shows empty display state when no session exists', () => {
+    render(
+      <VMDetailView
+        vm={{ ...mockVM, status: VMStatus.Running }}
+        onOpenDisplay={vi.fn()}
+        onCloseDisplay={vi.fn()}
+        onUpdateConfig={vi.fn()}
+        onAction={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Display'));
+    expect(screen.getByText('No active display session.')).toBeInTheDocument();
+  });
+
+  it('shows display last error and disables close when disconnected', () => {
+    const onCloseDisplay = vi.fn();
+    render(
+      <VMDetailView
+        vm={{ ...mockVM, status: VMStatus.Running }}
+        displaySession={{
+          ...displaySession,
+          status: DisplaySessionStatus.Disconnected,
+          lastError: 'socket dropped',
+        }}
+        onOpenDisplay={vi.fn()}
+        onCloseDisplay={onCloseDisplay}
+        onUpdateConfig={vi.fn()}
+        onAction={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Display'));
+    expect(screen.getByText('Last error: socket dropped')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close Display' })).toBeDisabled();
+    expect(onCloseDisplay).not.toHaveBeenCalled();
   });
 });

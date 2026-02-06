@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { ChildProcess } from 'child_process';
-import * as childProcess from 'child_process';
 import * as controller from './controller';
+import { DisplaySessionStatus } from '@openutm/shared-types';
 
 // Test config fixtures
 const testConfigs = {
@@ -69,6 +69,7 @@ const connectQMPMock = mock(async (socketPath: string) => {
 
 describe('VM Process Controller', () => {
   beforeEach(() => {
+    controller.resetRuntimeStateForTests();
     spawnMock.mockClear?.();
     (mockQMPClient.executeCommand as any).mockClear?.();
     (mockQMPClient.disconnect as any).mockClear?.();
@@ -123,6 +124,17 @@ describe('VM Process Controller', () => {
     it('sets up process monitoring (exit handler)', async () => {
       const result = await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
       expect(result.pid).toBeGreaterThan(0);
+    });
+
+    it('adds spice arguments with deterministic port', async () => {
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      expect(spawnMock).toHaveBeenCalled();
+      const args = (spawnMock as any).mock.calls[0][1] as string[];
+      const spiceIndex = args.indexOf('-spice');
+      expect(spiceIndex).toBeGreaterThan(-1);
+      expect(args[spiceIndex + 1]).toContain('disable-ticketing=on');
+      expect(args[spiceIndex + 1]).toContain('addr=127.0.0.1');
+      expect(args[spiceIndex + 1]).toContain(`port=${controller.resolveSpicePort('vm-test-1')}`);
     });
   });
 
@@ -348,6 +360,43 @@ describe('VM Process Controller', () => {
       await controller.stopVM('vm-test-1');
       
       expect(mockQMPClient.disconnect).toHaveBeenCalled();
+    });
+  });
+
+  describe('Display Session Lifecycle', () => {
+    it('opens display session for running VM', async () => {
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      const session = await controller.openDisplaySession('vm-test-1');
+      expect(session.vmId).toBe('vm-test-1');
+      expect(session.uri).toContain('spice://127.0.0.1:');
+      expect(session.status).toBe(DisplaySessionStatus.Connected);
+    });
+
+    it('returns existing session when already connected', async () => {
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      const first = await controller.openDisplaySession('vm-test-1');
+      const second = await controller.openDisplaySession('vm-test-1');
+      expect(second).toEqual(first);
+    });
+
+    it('marks session disconnected on close and reconnects with incremented attempts', async () => {
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      const first = await controller.openDisplaySession('vm-test-1');
+      controller.closeDisplaySession('vm-test-1');
+      const disconnected = controller.getDisplaySession('vm-test-1');
+      expect(disconnected?.status).toBe(DisplaySessionStatus.Disconnected);
+
+      const reconnected = await controller.openDisplaySession('vm-test-1');
+      expect(reconnected.status).toBe(DisplaySessionStatus.Connected);
+      expect(reconnected.reconnectAttempts).toBe(first.reconnectAttempts + 1);
+    });
+
+    it('marks display disconnected when VM stops', async () => {
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      await controller.openDisplaySession('vm-test-1');
+      await controller.stopVM('vm-test-1');
+      const session = controller.getDisplaySession('vm-test-1');
+      expect(session?.status).toBe(DisplaySessionStatus.Disconnected);
     });
   });
 });

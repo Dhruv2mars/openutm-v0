@@ -11,4 +11,7 @@ contextBridge.exposeInMainWorld('openutm', {
   stopVm: (id: string) => ipcRenderer.invoke('stop-vm', id),
   pauseVm: (id: string) => ipcRenderer.invoke('pause-vm', id),
   resumeVm: (id: string) => ipcRenderer.invoke('resume-vm', id),
+  openDisplay: (id: string) => ipcRenderer.invoke('open-display', id),
+  getDisplay: (id: string) => ipcRenderer.invoke('get-display', id),
+  closeDisplay: (id: string) => ipcRenderer.invoke('close-display', id),
 });
