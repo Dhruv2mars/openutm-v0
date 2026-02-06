@@ -13,7 +13,7 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "test:native": "cargo test --manifest-path apps/tauri/src-tauri/Cargo.toml",
+    "test:native": "bun run --cwd apps/tauri build:frontend && cargo test --manifest-path apps/tauri/src-tauri/Cargo.toml",
     "typecheck": "bun run --cwd packages/shared-types build && bun run --cwd packages/ui build && turbo run typecheck",
     "coverage": "bun run --cwd packages/shared-types test:coverage && bun run --cwd packages/qemu-lib test:coverage && bun run --cwd packages/vm-core test:coverage && bun run --cwd packages/ui test:coverage",
     "verify:release": "bun run lint && bun run typecheck && bun run test && bun run test:native && bun run coverage && bun run build",

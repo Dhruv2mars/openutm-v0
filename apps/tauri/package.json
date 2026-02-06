@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
+    "build:frontend": "bunx vite build",
     "build": "tauri build",
     "test": "bun test",
     "lint": "eslint src vite.config.ts --ext .ts,.tsx --max-warnings=0",
