@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('openutm', {
   detectQemu: () => ipcRenderer.invoke('detect-qemu'),
+  getRuntimeStatus: () => ipcRenderer.invoke('get-runtime-status'),
+  installManagedRuntime: () => ipcRenderer.invoke('install-managed-runtime'),
+  clearManagedRuntime: () => ipcRenderer.invoke('clear-managed-runtime'),
   listVms: () => ipcRenderer.invoke('list-vms'),
   getVm: (id: string) => ipcRenderer.invoke('get-vm', id),
   createVm: (request: unknown) => ipcRenderer.invoke('create-vm', request),

@@ -274,6 +274,37 @@ describe('VMDetailView', () => {
     expect(onCloseDisplay).toHaveBeenCalledWith(mockVM.id);
   });
 
+  it('disables start and open display actions when runtime gate is active', () => {
+    const onAction = vi.fn();
+    const onOpenDisplay = vi.fn();
+    render(
+      <VMDetailView
+        vm={mockVM}
+        onOpenDisplay={onOpenDisplay}
+        onCloseDisplay={vi.fn()}
+        onUpdateConfig={vi.fn()}
+        onAction={onAction}
+        onDelete={vi.fn()}
+        disableStart
+        disableStartReason="Install OpenUTM Runtime"
+        disableDisplayOpen
+        disableDisplayOpenReason="Install OpenUTM Runtime"
+      />
+    );
+
+    const startButton = screen.getByRole('button', { name: 'Start' }) as HTMLButtonElement;
+    expect(startButton.disabled).toBe(true);
+    expect(startButton.title).toBe('Install OpenUTM Runtime');
+
+    fireEvent.click(screen.getByText('Display'));
+    const openDisplayButton = screen.getByRole('button', { name: /open display/i }) as HTMLButtonElement;
+    expect(openDisplayButton.disabled).toBe(true);
+    expect(openDisplayButton.title).toBe('Install OpenUTM Runtime');
+
+    expect(onAction).not.toHaveBeenCalled();
+    expect(onOpenDisplay).not.toHaveBeenCalled();
+  });
+
   it('shows empty display state when no session exists', () => {
     render(
       <VMDetailView

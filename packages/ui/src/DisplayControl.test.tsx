@@ -30,4 +30,18 @@ describe('DisplayControl', () => {
     const button = screen.getByRole('button', { name: /open display/i }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
   });
+
+  it('is disabled when explicitly disabled by runtime gate', () => {
+    render(
+      <DisplayControl
+        onOpenDisplay={() => {}}
+        status={VMStatus.Running}
+        disabled
+        disabledReason="Managed runtime required"
+      />,
+    );
+    const button = screen.getByRole('button', { name: /open display/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe('Managed runtime required');
+  });
 });

@@ -12,13 +12,13 @@ export interface VMDetailViewProps {
   onUpdateConfig: (id: string, config: any) => void;
   onAction: (id: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'shutdown') => void;
   onDelete: (id: string) => void;
-  onPickInstallMedia?: (id: string) => void;
-  onEjectInstallMedia?: (id: string) => void;
-  onSetBootOrder?: (id: string, order: 'disk-first' | 'cdrom-first') => void;
   onOpenDisplay?: (id: string) => void;
   onCloseDisplay?: (id: string) => void;
   displaySession?: DisplaySession | null;
-  displayBody?: React.ReactNode;
+  disableStart?: boolean;
+  disableStartReason?: string;
+  disableDisplayOpen?: boolean;
+  disableDisplayOpenReason?: string;
 }
 
 type Tab = 'overview' | 'hardware' | 'drives' | 'network' | 'display';
@@ -29,13 +29,13 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
   onUpdateConfig,
   onAction,
   onDelete,
-  onPickInstallMedia,
-  onEjectInstallMedia,
-  onSetBootOrder,
   onOpenDisplay,
   onCloseDisplay,
   displaySession = null,
-  displayBody,
+  disableStart = false,
+  disableStartReason,
+  disableDisplayOpen = false,
+  disableDisplayOpenReason,
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -101,7 +101,7 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
   );
 
   const renderDrives = () => (
-    <div className="space-y-4">
+    <div className="space-y-2">
       {vm.config.disks.map((disk, idx) => (
         <div key={idx} className="p-3 border rounded-lg">
           <p className="font-medium">Disk {idx + 1}</p>
@@ -109,41 +109,6 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
           <p className="text-sm text-gray-500">{(disk.size / 1024 / 1024 / 1024).toFixed(1)} GB ({disk.format})</p>
         </div>
       ))}
-      <div className="p-3 border rounded-lg space-y-2">
-        <p className="font-medium">Install Media</p>
-        <p className="text-sm text-gray-500">{vm.config.installMediaPath || 'None'}</p>
-        <p className="text-sm text-gray-500">Boot order: {vm.config.bootOrder}</p>
-        <div className="flex flex-wrap gap-2">
-          {onPickInstallMedia ? (
-            <Button variant="secondary" onClick={() => onPickInstallMedia(vm.id)}>
-              Pick ISO
-            </Button>
-          ) : null}
-          {onEjectInstallMedia ? (
-            <Button
-              variant="secondary"
-              onClick={() => onEjectInstallMedia(vm.id)}
-              disabled={!vm.config.installMediaPath}
-            >
-              Eject ISO
-            </Button>
-          ) : null}
-          {onSetBootOrder ? (
-            <Button variant="secondary" onClick={() => onSetBootOrder(vm.id, 'disk-first')}>
-              Boot Disk First
-            </Button>
-          ) : null}
-          {onSetBootOrder ? (
-            <Button
-              variant="secondary"
-              onClick={() => onSetBootOrder(vm.id, 'cdrom-first')}
-              disabled={!vm.config.installMediaPath}
-            >
-              Boot ISO First
-            </Button>
-          ) : null}
-        </div>
-      </div>
     </div>
   );
 
@@ -158,8 +123,12 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
 
   const renderDisplay = () => (
     <div className="space-y-4">
-      <DisplayControl onOpenDisplay={() => onOpenDisplay?.(vm.id)} status={vm.status} />
-      {displayBody ? <div className="p-3 border rounded-lg">{displayBody}</div> : null}
+      <DisplayControl
+        onOpenDisplay={() => onOpenDisplay?.(vm.id)}
+        status={vm.status}
+        disabled={disableDisplayOpen}
+        disabledReason={disableDisplayOpenReason}
+      />
       {displaySession ? (
         <div className="p-3 border rounded-lg space-y-2">
           <p className="font-medium">Session</p>
@@ -197,7 +166,13 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
         </div>
         <div className="flex gap-2">
           {vm.status === VMStatus.Stopped && (
-            <Button onClick={() => onAction(vm.id, 'start')}>Start</Button>
+            <Button
+              onClick={() => onAction(vm.id, 'start')}
+              disabled={disableStart}
+              title={disableStart ? disableStartReason : undefined}
+            >
+              Start
+            </Button>
           )}
           {vm.status === VMStatus.Running && (
             <>

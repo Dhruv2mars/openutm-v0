@@ -9,15 +9,12 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "vite build && node scripts/build-main.mjs",
-    "typecheck": "bun run --cwd ../../packages/shared-types build && bun run --cwd ../../packages/ui build && tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint src electron-src scripts vite.config.ts electron-env.d.ts --ext .ts,.tsx,.mjs --max-warnings=0",
     "test": "bun test",
-    "test:coverage": "node scripts/coverage.mjs",
-    "verify:release": "bun run lint && bun run typecheck && bun run test && bun run test:coverage && bun run pack && node scripts/check-package.mjs --arch universal",
     "verify:workflow": "node scripts/verify-workflow.mjs",
-    "pack": "bun run build && electron-builder --dir --universal",
-    "pack:x64": "bun run build && electron-builder --dir --x64",
-    "dist": "bun run build && electron-builder --universal"
+    "pack": "bun run build && electron-builder --dir",
+    "dist": "bun run build && electron-builder"
   },
   "build": {
     "appId": "com.openutm.electron",
@@ -45,11 +42,11 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal"]
+          "arch": ["arm64"]
         },
         {
           "target": "zip",
-          "arch": ["universal"]
+          "arch": ["arm64"]
         }
       ],
       "minimumSystemVersion": "12.0"
@@ -74,16 +71,13 @@
     "@openutm/ui": "workspace:*",
     "@openutm/vm-core": "workspace:*",
     "@openutm/shared-types": "workspace:*",
-    "@spice-project/spice-html5": "^0.2.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "ws": "^8.18.3"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.0",
-    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.18",
     "esbuild": "^0.20.1",

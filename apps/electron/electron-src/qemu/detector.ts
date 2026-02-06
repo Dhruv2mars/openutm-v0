@@ -1,12 +1,17 @@
-import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
-import { platform } from 'os';
+import { spawnSync as defaultSpawnSync } from 'child_process';
+import { existsSync as defaultExistsSync } from 'fs';
+import { platform as defaultPlatform } from 'os';
+import { getRuntimeConfig as defaultGetRuntimeConfig } from '../config';
+
+export type RuntimeSource = 'managed' | 'system';
 
 export interface QemuInfo {
   path: string;
   version: string;
   accelerators: string[];
   spiceSupported: boolean;
+  source: RuntimeSource;
+  ready: boolean;
 }
 
 const SEARCH_PATHS: Record<string, string[]> = {
@@ -27,124 +32,93 @@ const SEARCH_PATHS: Record<string, string[]> = {
   ],
 };
 
-function findQemuBinary(): string {
-  const osType = platform();
+type SpawnSyncResult = {
+  status: number | null;
+  stdout?: string | null;
+  stderr?: string | null;
+};
+
+interface DetectorDeps {
+  spawnSync: typeof defaultSpawnSync;
+  existsSync: typeof defaultExistsSync;
+  platform: typeof defaultPlatform;
+  getRuntimeConfig: typeof defaultGetRuntimeConfig;
+}
+
+const defaultDeps: DetectorDeps = {
+  spawnSync: defaultSpawnSync,
+  existsSync: defaultExistsSync,
+  platform: defaultPlatform,
+  getRuntimeConfig: defaultGetRuntimeConfig,
+};
+
+let deps: DetectorDeps = { ...defaultDeps };
+
+export function setDetectorDepsForTests(overrides: Partial<DetectorDeps>): void {
+  deps = { ...deps, ...overrides };
+}
+
+export function resetDetectorDepsForTests(): void {
+  deps = { ...defaultDeps };
+}
+
+function run(binaryPath: string, args: string[]): SpawnSyncResult {
+  const result = deps.spawnSync(binaryPath, args, {
+    encoding: 'utf-8',
+    stdio: 'pipe',
+    timeout: 5000,
+  }) as unknown as SpawnSyncResult;
+  return result;
+}
+
+function findSystemQemuBinary(): string {
+  const osType = deps.platform();
   const searchPaths = SEARCH_PATHS[osType] || [];
 
-  for (const path of searchPaths) {
-    if (existsSync(path)) {
-      return path;
+  for (const targetPath of searchPaths) {
+    if (deps.existsSync(targetPath)) {
+      return targetPath;
     }
   }
 
   try {
-    const x64 = spawnSync('which', ['qemu-system-x86_64'], {
+    const x64 = deps.spawnSync('which', ['qemu-system-x86_64'], {
       encoding: 'utf-8',
-      stdio: 'pipe'
-    });
+      stdio: 'pipe',
+    }) as unknown as SpawnSyncResult;
     if (x64.status === 0 && x64.stdout) {
-      return x64.stdout.trim();
+      return String(x64.stdout).trim();
     }
 
-    const arm64 = spawnSync('which', ['qemu-system-aarch64'], {
+    const arm64 = deps.spawnSync('which', ['qemu-system-aarch64'], {
       encoding: 'utf-8',
-      stdio: 'pipe'
-    });
+      stdio: 'pipe',
+    }) as unknown as SpawnSyncResult;
     if (arm64.status === 0 && arm64.stdout) {
-      return arm64.stdout.trim();
+      return String(arm64.stdout).trim();
     }
   } catch {
-    // which command failed - fall through to error
+    // noop
   }
 
   throw new Error('QEMU not found in PATH. Please install QEMU.');
 }
 
-function getQemuVersion(path: string): string {
+function getQemuVersion(binaryPath: string): string {
   try {
-    const result = spawnSync(path, ['--version'], {
-      encoding: 'utf-8',
-      stdio: 'pipe'
-    });
-
+    const result = run(binaryPath, ['--version']);
     if (result.status === 0 && result.stdout) {
-      return result.stdout.trim().split('\n')[0];
+      return String(result.stdout).trim().split('\n')[0] || 'unknown';
     }
-  } catch (err) {
-    console.warn('Failed to get QEMU version:', err);
+  } catch {
+    // noop
   }
-
   return 'unknown';
 }
 
-function detectPlatformAccelerators(): string[] {
-  const accelerators: string[] = [];
-  const osType = platform();
-
+function detectSpiceSupport(binaryPath: string): boolean {
   try {
-    const result = spawnSync('qemu-system-x86_64', ['--help'], {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-      timeout: 5000
-    });
-
-    if (result.stdout) {
-      const output = result.stdout;
-
-      if (osType === 'darwin' && output.includes('-accel hvf')) {
-        accelerators.push('hvf');
-      }
-      if (osType === 'linux' && output.includes('-accel kvm')) {
-        accelerators.push('kvm');
-      }
-      if (osType === 'win32' && output.includes('-accel whpx')) {
-        accelerators.push('whpx');
-      }
-      if (output.includes('-accel tcg')) {
-        accelerators.push('tcg');
-      }
-    }
-  } catch (err) {
-    console.warn('Failed to detect accelerators:', err);
-    accelerators.push('tcg');
-  }
-
-  if (accelerators.length === 0) {
-    accelerators.push('tcg');
-  }
-
-  return accelerators;
-}
-
-function prioritizeAccelerators(accelerators: string[]): string[] {
-  const preferred: string[] = [];
-  const osType = platform();
-
-  if (osType === 'darwin' && accelerators.includes('hvf')) preferred.push('hvf');
-  if (osType === 'linux' && accelerators.includes('kvm')) preferred.push('kvm');
-  if (osType === 'win32' && accelerators.includes('whpx')) preferred.push('whpx');
-  if (accelerators.includes('tcg')) preferred.push('tcg');
-
-  for (const accelerator of accelerators) {
-    if (!preferred.includes(accelerator)) {
-      preferred.push(accelerator);
-    }
-  }
-
-  if (preferred.length === 0) {
-    preferred.push('tcg');
-  }
-
-  return preferred;
-}
-
-function detectSpiceSupport(path: string): boolean {
-  try {
-    const result = spawnSync(path, ['-spice', 'help'], {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-      timeout: 5000,
-    });
+    const result = run(binaryPath, ['-spice', 'help']);
     const output = `${result.stdout || ''}\n${result.stderr || ''}`.toLowerCase();
     if (output.includes('spice options:')) {
       return true;
@@ -155,16 +129,60 @@ function detectSpiceSupport(path: string): boolean {
   }
 }
 
-export async function detectQemu(): Promise<QemuInfo> {
-  const qemuPath = findQemuBinary();
-  const version = getQemuVersion(qemuPath);
-  const accelerators = prioritizeAccelerators(detectPlatformAccelerators());
-  const spiceSupported = detectSpiceSupport(qemuPath);
+function detectPlatformAccelerators(binaryPath: string): string[] {
+  const accelerators: string[] = [];
+  const osType = deps.platform();
 
+  try {
+    const result = run(binaryPath, ['--help']);
+    const output = String(result.stdout || '');
+
+    if (osType === 'darwin' && output.includes('-accel hvf')) {
+      accelerators.push('hvf');
+    }
+    if (osType === 'linux' && output.includes('-accel kvm')) {
+      accelerators.push('kvm');
+    }
+    if (osType === 'win32' && output.includes('-accel whpx')) {
+      accelerators.push('whpx');
+    }
+    if (output.includes('-accel tcg')) {
+      accelerators.push('tcg');
+    }
+  } catch {
+    accelerators.push('tcg');
+  }
+
+  if (accelerators.length === 0) {
+    accelerators.push('tcg');
+  }
+  return accelerators;
+}
+
+function buildResult(binaryPath: string, source: RuntimeSource): QemuInfo {
+  const version = getQemuVersion(binaryPath);
+  const accelerators = detectPlatformAccelerators(binaryPath);
+  const spiceSupported = detectSpiceSupport(binaryPath);
   return {
-    path: qemuPath,
+    path: binaryPath,
     version,
     accelerators,
     spiceSupported,
+    source,
+    ready: spiceSupported,
   };
+}
+
+export async function detectQemu(): Promise<QemuInfo> {
+  const runtime = await deps.getRuntimeConfig();
+  if (runtime.managedRuntimePath && deps.existsSync(runtime.managedRuntimePath)) {
+    return buildResult(runtime.managedRuntimePath, 'managed');
+  }
+
+  const systemPath = findSystemQemuBinary();
+  return buildResult(systemPath, 'system');
+}
+
+export async function getRuntimeStatus(): Promise<QemuInfo> {
+  return detectQemu();
 }

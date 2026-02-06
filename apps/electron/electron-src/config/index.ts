@@ -7,9 +7,6 @@ interface VMConfigData {
   memory: number;
   cores: number;
   disk: string;
-  installMediaPath?: string;
-  bootOrder: 'disk-first' | 'cdrom-first';
-  networkType: 'nat' | 'bridge';
   qmpSocket?: string;
   accelerator?: string;
   createdAt: number;
@@ -18,6 +15,13 @@ interface VMConfigData {
 
 interface ConfigStore {
   vms: VMConfigData[];
+  managedRuntimePath?: string;
+  managedRuntimeVersion?: string;
+}
+
+export interface RuntimeConfigData {
+  managedRuntimePath?: string;
+  managedRuntimeVersion?: string;
 }
 
 function getConfigDir(): string {
@@ -28,6 +32,10 @@ function getConfigPath(): string {
   return path.join(getConfigDir(), 'config.json');
 }
 
+export function getConfigDirPath(): string {
+  return getConfigDir();
+}
+
 function ensureConfigDir(): void {
   const configDir = getConfigDir();
   if (!existsSync(configDir)) {
@@ -35,27 +43,9 @@ function ensureConfigDir(): void {
   }
 }
 
-function normalizeVmConfigData(raw: Partial<VMConfigData>): VMConfigData {
-  const now = Date.now();
-  return {
-    id: raw.id || '',
-    name: raw.name || '',
-    memory: raw.memory || 2048,
-    cores: raw.cores || 2,
-    disk: raw.disk || '',
-    installMediaPath: raw.installMediaPath,
-    bootOrder: raw.bootOrder || 'disk-first',
-    networkType: raw.networkType || 'nat',
-    qmpSocket: raw.qmpSocket,
-    accelerator: raw.accelerator,
-    createdAt: raw.createdAt || now,
-    updatedAt: raw.updatedAt || now,
-  };
-}
-
 function readStore(): ConfigStore {
-  ensureConfigDir();
   const configPath = getConfigPath();
+  ensureConfigDir();
 
   if (!existsSync(configPath)) {
     return { vms: [] };
@@ -65,10 +55,18 @@ function readStore(): ConfigStore {
     const raw = readFileSync(configPath, 'utf8');
     const parsed = JSON.parse(raw) as ConfigStore;
     if (!parsed || !Array.isArray(parsed.vms)) {
-      return { vms: [] };
+      return {
+        vms: [],
+        managedRuntimePath: undefined,
+        managedRuntimeVersion: undefined,
+      };
     }
     return {
-      vms: parsed.vms.map((vm) => normalizeVmConfigData(vm)),
+      vms: parsed.vms,
+      managedRuntimePath:
+        typeof parsed.managedRuntimePath === 'string' ? parsed.managedRuntimePath : undefined,
+      managedRuntimeVersion:
+        typeof parsed.managedRuntimeVersion === 'string' ? parsed.managedRuntimeVersion : undefined,
     };
   } catch {
     return { vms: [] };
@@ -76,12 +74,11 @@ function readStore(): ConfigStore {
 }
 
 function writeStore(store: ConfigStore): void {
-  ensureConfigDir();
   const configPath = getConfigPath();
   const tempPath = `${configPath}.tmp`;
+  ensureConfigDir();
   writeFileSync(tempPath, JSON.stringify(store, null, 2), 'utf8');
   renameSync(tempPath, configPath);
-  /* c8 ignore next 3 */
   if (existsSync(tempPath)) {
     unlinkSync(tempPath);
   }
@@ -100,7 +97,7 @@ export async function createVMConfig(config: Omit<VMConfigData, 'createdAt' | 'u
 
   const now = Date.now();
   const next: VMConfigData = {
-    ...normalizeVmConfigData(config),
+    ...config,
     createdAt: now,
     updatedAt: now,
   };
@@ -151,6 +148,33 @@ export async function updateVMConfig(
 export async function deleteVMConfig(vmId: string): Promise<{ success: boolean }> {
   const store = readStore();
   store.vms = store.vms.filter((entry) => entry.id !== vmId);
+  writeStore(store);
+  return { success: true };
+}
+
+export async function getRuntimeConfig(): Promise<RuntimeConfigData> {
+  const store = readStore();
+  return {
+    managedRuntimePath: store.managedRuntimePath,
+    managedRuntimeVersion: store.managedRuntimeVersion,
+  };
+}
+
+export async function setManagedRuntime(path: string, version: string): Promise<RuntimeConfigData> {
+  const store = readStore();
+  store.managedRuntimePath = path;
+  store.managedRuntimeVersion = version;
+  writeStore(store);
+  return {
+    managedRuntimePath: store.managedRuntimePath,
+    managedRuntimeVersion: store.managedRuntimeVersion,
+  };
+}
+
+export async function clearManagedRuntime(): Promise<{ success: boolean }> {
+  const store = readStore();
+  delete store.managedRuntimePath;
+  delete store.managedRuntimeVersion;
   writeStore(store);
   return { success: true };
 }

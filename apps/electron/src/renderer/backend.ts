@@ -14,19 +14,29 @@ export interface DetectQemuPayload {
   path: string;
   version: string;
   accelerators: string[];
+  spiceSupported: boolean;
+  source: RuntimeSource;
+  ready: boolean;
 }
 
-interface QemuInstallCommandPayload {
-  command: string;
+export type RuntimeSource = "managed" | "system";
+
+export interface RuntimeStatus {
+  source: RuntimeSource;
+  path: string;
+  version: string;
+  accelerators: string[];
+  spiceSupported: boolean;
+  ready: boolean;
 }
+
+export type DetectionResult = QemuDetectionResult & RuntimeStatus;
 
 export interface CreateVmRequest {
   name: string;
   cpu: number;
   memory: number;
   diskSizeGb: number;
-  installMediaPath?: string;
-  bootOrder: "disk-first" | "cdrom-first";
   networkType: "nat" | "bridge";
   os: "linux" | "windows" | "macos" | "other";
 }
@@ -40,6 +50,9 @@ export interface UpdateVmRequest {
 
 interface ElectronBridge {
   detectQemu: () => Promise<IpcResult<DetectQemuPayload>>;
+  getRuntimeStatus: () => Promise<IpcResult<RuntimeStatus>>;
+  installManagedRuntime: () => Promise<IpcResult<RuntimeStatus>>;
+  clearManagedRuntime: () => Promise<IpcResult<{ success: boolean }>>;
   listVms: () => Promise<IpcResult<VM[]>>;
   createVm: (request: CreateVmRequest) => Promise<IpcResult<VM>>;
   updateVm: (request: UpdateVmRequest) => Promise<IpcResult<VM>>;
@@ -51,12 +64,6 @@ interface ElectronBridge {
   openDisplay: (id: string) => Promise<IpcResult<DisplaySession>>;
   getDisplay: (id: string) => Promise<IpcResult<DisplaySession | null>>;
   closeDisplay: (id: string) => Promise<IpcResult<{ success: boolean }>>;
-  getQemuInstallCommand: () => Promise<IpcResult<QemuInstallCommandPayload>>;
-  openQemuInstallTerminal: () => Promise<IpcResult<{ success: boolean }>>;
-  pickInstallMedia: (id?: string) => Promise<IpcResult<string | null>>;
-  setInstallMedia: (id: string, path: string) => Promise<IpcResult<{ success: boolean }>>;
-  ejectInstallMedia: (id: string) => Promise<IpcResult<{ success: boolean }>>;
-  setBootOrder: (id: string, order: "disk-first" | "cdrom-first") => Promise<IpcResult<{ success: boolean }>>;
 }
 
 function getBridge(): ElectronBridge {
@@ -87,44 +94,57 @@ function parseMajor(version: string | null): number | null {
 
 function normalizeVm(vm: VM): VM {
   const status = Object.values(VMStatus).includes(vm.status) ? vm.status : VMStatus.Error;
-  const config = vm.config || {
-    cpu: 2,
-    memory: 2048,
-    disks: [],
-    network: { type: "nat" as const },
-    bootOrder: "disk-first" as const,
-    networkType: "nat" as const,
-  };
-  const installMediaPath = config.installMediaPath;
-  const bootOrder = config.bootOrder || "disk-first";
-  const networkType = config.networkType || config.network.type || "nat";
   return {
     ...vm,
     status,
-    config: {
-      ...config,
-      installMediaPath,
-      bootOrder,
-      networkType,
-      network: {
-        ...config.network,
-        type: networkType,
-      },
-    },
   };
 }
 
-export async function detectQemuViaBackend(): Promise<QemuDetectionResult> {
+export async function detectQemuViaBackend(): Promise<DetectionResult> {
   const bridge = getBridge();
   const data = unwrapResult(await bridge.detectQemu(), "Failed to detect QEMU");
   const major = parseMajor(data.version || null);
+  const spiceSupported = Boolean(data.spiceSupported);
+  const source: RuntimeSource = data.source || "system";
+  const ready = data.ready !== undefined ? Boolean(data.ready) : spiceSupported;
   return {
     available: true,
     path: data.path,
     version: data.version,
     accelerators: data.accelerators,
     minimumVersionMet: major !== null ? major >= 6 : false,
+    spiceSupported,
+    source,
+    ready,
   };
+}
+
+function normalizeRuntimeStatus(status: RuntimeStatus): RuntimeStatus {
+  return {
+    source: status.source,
+    path: status.path,
+    version: status.version,
+    accelerators: status.accelerators || [],
+    spiceSupported: Boolean(status.spiceSupported),
+    ready: Boolean(status.ready),
+  };
+}
+
+export async function getRuntimeStatusViaBackend(): Promise<RuntimeStatus> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.getRuntimeStatus(), "Failed to get runtime status");
+  return normalizeRuntimeStatus(data);
+}
+
+export async function installManagedRuntimeViaBackend(): Promise<RuntimeStatus> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.installManagedRuntime(), "Failed to install OpenUTM runtime");
+  return normalizeRuntimeStatus(data);
+}
+
+export async function clearManagedRuntimeViaBackend(): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.clearManagedRuntime(), "Failed to clear managed runtime");
 }
 
 export async function listVmsViaBackend(): Promise<VM[]> {
@@ -192,36 +212,4 @@ export async function getDisplayViaBackend(id: string): Promise<DisplaySession |
 export async function closeDisplayViaBackend(id: string): Promise<void> {
   const bridge = getBridge();
   unwrapResult(await bridge.closeDisplay(id), "Failed to close display session");
-}
-
-export async function pickInstallMediaViaBackend(id?: string): Promise<string | null> {
-  const bridge = getBridge();
-  const data = unwrapResult(await bridge.pickInstallMedia(id), "Failed to pick install media");
-  return data || null;
-}
-
-export async function setInstallMediaViaBackend(id: string, path: string): Promise<void> {
-  const bridge = getBridge();
-  unwrapResult(await bridge.setInstallMedia(id, path), "Failed to set install media");
-}
-
-export async function ejectInstallMediaViaBackend(id: string): Promise<void> {
-  const bridge = getBridge();
-  unwrapResult(await bridge.ejectInstallMedia(id), "Failed to eject install media");
-}
-
-export async function setBootOrderViaBackend(id: string, order: "disk-first" | "cdrom-first"): Promise<void> {
-  const bridge = getBridge();
-  unwrapResult(await bridge.setBootOrder(id, order), "Failed to set boot order");
-}
-
-export async function getQemuInstallCommandViaBackend(): Promise<string> {
-  const bridge = getBridge();
-  const data = unwrapResult(await bridge.getQemuInstallCommand(), 'Failed to get QEMU install command');
-  return data.command;
-}
-
-export async function openQemuInstallTerminalViaBackend(): Promise<void> {
-  const bridge = getBridge();
-  unwrapResult(await bridge.openQemuInstallTerminal(), 'Failed to open QEMU install terminal');
 }

@@ -15,26 +15,22 @@ import {
   type QemuDetectionResult,
 } from '@openutm/ui';
 import {
+  clearManagedRuntimeViaBackend,
   createVmViaBackend,
   deleteVmViaBackend,
   detectQemuViaBackend,
-  getQemuInstallCommandViaBackend,
+  getRuntimeStatusViaBackend,
+  installManagedRuntimeViaBackend,
   listVmsViaBackend,
-  openQemuInstallTerminalViaBackend,
   pauseVmViaBackend,
   openDisplayViaBackend,
   getDisplayViaBackend,
   closeDisplayViaBackend,
-  ejectInstallMediaViaBackend,
   resumeVmViaBackend,
-  pickInstallMediaViaBackend,
-  setBootOrderViaBackend,
-  setInstallMediaViaBackend,
   startVmViaBackend,
   stopVmViaBackend,
   updateVmViaBackend,
 } from './backend';
-import { SpiceViewer } from './spice-viewer';
 import './index.css';
 
 const vmStatusToListStatus = (status: VMStatus): VMListItem['status'] => {
@@ -50,9 +46,10 @@ const vmStatusToListStatus = (status: VMStatus): VMListItem['status'] => {
 type AppState = 'loading' | 'qemu-setup' | 'ready';
 
 const DEFAULT_INSTALL_SUGGESTION = `macOS: Install QEMU using Homebrew:
-  brew update && brew install qemu
+  brew install qemu
 
-Alternative manual docs: https://www.qemu.org/download/#macos`;
+Alternatively, download from: https://www.qemu.org/download/#macos`;
+const RUNTIME_BLOCK_REASON = 'Install OpenUTM Runtime to enable SPICE display';
 
 function inferOs(vm: VM): VMListItem['os'] {
   const value = vm.name.toLowerCase();
@@ -67,12 +64,14 @@ function inferOs(vm: VM): VMListItem['os'] {
 function App() {
   const [appState, setAppState] = useState<AppState>('loading');
   const [qemuResult, setQemuResult] = useState<QemuDetectionResult | null>(null);
+  const [runtimeReady, setRuntimeReady] = useState(true);
+  const [runtimeInstalling, setRuntimeInstalling] = useState(false);
+  const [runtimeInstallError, setRuntimeInstallError] = useState<string | null>(null);
   const [vms, setVms] = useState<VM[]>([]);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [displaySessions, setDisplaySessions] = useState<Record<string, DisplaySession | null>>({});
-  const [installSuggestion, setInstallSuggestion] = useState(DEFAULT_INSTALL_SUGGESTION);
   const { addToast } = useToast();
 
   const refreshVms = useCallback(async () => {
@@ -91,6 +90,8 @@ function App() {
     try {
       const result = await detectQemuViaBackend();
       setQemuResult(result);
+      setRuntimeReady(result.ready);
+      setRuntimeInstallError(null);
       if (result.available && result.minimumVersionMet) {
         await refreshVms();
         setAppState('ready');
@@ -105,31 +106,19 @@ function App() {
         accelerators: [],
         minimumVersionMet: false,
       });
+      setRuntimeReady(false);
       setAppState('qemu-setup');
-      const message = error instanceof Error ? error.message : String(error);
-      addToast('error', message || 'Failed to detect QEMU installation');
+      addToast('error', error instanceof Error ? error.message : 'Failed to detect QEMU installation');
     }
   }, [addToast, refreshVms]);
-
-  const loadInstallSuggestion = useCallback(async () => {
-    try {
-      const command = await getQemuInstallCommandViaBackend();
-      setInstallSuggestion(`macOS: Install QEMU using Homebrew:\n  ${command}`);
-    } catch {
-      setInstallSuggestion(DEFAULT_INSTALL_SUGGESTION);
-    }
-  }, []);
 
   useEffect(() => {
     void checkQemu();
   }, [checkQemu]);
 
-  useEffect(() => {
-    void loadInstallSuggestion();
-  }, [loadInstallSuggestion]);
-
   const selectedVm = vms.find((vm) => vm.id === selectedId);
   const selectedDisplay = selectedId ? (displaySessions[selectedId] || null) : null;
+  const runtimeBlocked = !runtimeReady;
 
   const vmListItems: VMListItem[] = vms.map((vm) => ({
     id: vm.id,
@@ -157,6 +146,10 @@ function App() {
         }
 
         if (action === 'start') {
+          if (runtimeBlocked) {
+            addToast('error', RUNTIME_BLOCK_REASON);
+            return;
+          }
           await startVmViaBackend(id);
           addToast('success', `${vmName} started`);
         } else {
@@ -169,7 +162,7 @@ function App() {
         addToast('error', error instanceof Error ? error.message : 'VM action failed');
       }
     },
-    [addToast, refreshVms, vms]
+    [addToast, refreshVms, runtimeBlocked, vms]
   );
 
   const handleAction = useCallback(
@@ -180,6 +173,10 @@ function App() {
       try {
         switch (action) {
           case 'start':
+            if (runtimeBlocked) {
+              addToast('error', RUNTIME_BLOCK_REASON);
+              return;
+            }
             await startVmViaBackend(id);
             addToast('success', `${vmName} started`);
             break;
@@ -203,7 +200,7 @@ function App() {
         addToast('error', error instanceof Error ? error.message : 'VM action failed');
       }
     },
-    [addToast, refreshVms, vms]
+    [addToast, refreshVms, runtimeBlocked, vms]
   );
 
   const handleUpdateConfig = useCallback(
@@ -255,6 +252,10 @@ function App() {
   const handleOpenDisplay = useCallback(
     async (vmId: string) => {
       try {
+        if (runtimeBlocked) {
+          addToast('error', RUNTIME_BLOCK_REASON);
+          return;
+        }
         const session = await openDisplayViaBackend(vmId);
         setDisplaySessions((previous) => ({ ...previous, [vmId]: session }));
         addToast('info', `Display endpoint: ${session.uri}`);
@@ -262,8 +263,41 @@ function App() {
         addToast('error', error instanceof Error ? error.message : 'Failed to open display');
       }
     },
-    [addToast]
+    [addToast, runtimeBlocked]
   );
+
+  const handleInstallManagedRuntime = useCallback(async () => {
+    setRuntimeInstalling(true);
+    setRuntimeInstallError(null);
+    try {
+      const status = await installManagedRuntimeViaBackend();
+      setRuntimeReady(status.ready);
+      await checkQemu();
+      if (status.ready) {
+        addToast('success', 'OpenUTM runtime installed');
+      } else {
+        setRuntimeInstallError('Managed runtime installed but SPICE is still unavailable');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to install OpenUTM runtime';
+      setRuntimeInstallError(message);
+      addToast('error', message);
+    } finally {
+      setRuntimeInstalling(false);
+    }
+  }, [addToast, checkQemu]);
+
+  const handleClearManagedRuntime = useCallback(async () => {
+    try {
+      await clearManagedRuntimeViaBackend();
+      const status = await getRuntimeStatusViaBackend();
+      setRuntimeReady(status.ready);
+      await checkQemu();
+      addToast('info', 'Managed runtime cleared');
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to clear managed runtime');
+    }
+  }, [addToast, checkQemu]);
 
   const handleCloseDisplay = useCallback(
     async (vmId: string) => {
@@ -277,60 +311,6 @@ function App() {
     },
     [addToast, syncDisplaySession]
   );
-
-  const handlePickInstallMedia = useCallback(async () => {
-    return pickInstallMediaViaBackend();
-  }, []);
-
-  const handlePickInstallMediaForVm = useCallback(
-    async (vmId: string) => {
-      try {
-        const path = await pickInstallMediaViaBackend(vmId);
-        if (!path) {
-          return;
-        }
-        await setInstallMediaViaBackend(vmId, path);
-        await setBootOrderViaBackend(vmId, 'cdrom-first');
-        await refreshVms();
-        addToast('success', 'Install media attached');
-      } catch (error) {
-        addToast('error', error instanceof Error ? error.message : 'Failed to attach install media');
-      }
-    },
-    [addToast, refreshVms]
-  );
-
-  const handleEjectInstallMedia = useCallback(
-    async (vmId: string) => {
-      try {
-        await ejectInstallMediaViaBackend(vmId);
-        await setBootOrderViaBackend(vmId, 'disk-first');
-        await refreshVms();
-        addToast('info', 'Install media ejected');
-      } catch (error) {
-        addToast('error', error instanceof Error ? error.message : 'Failed to eject install media');
-      }
-    },
-    [addToast, refreshVms]
-  );
-
-  const handleSetBootOrder = useCallback(
-    async (vmId: string, order: 'disk-first' | 'cdrom-first') => {
-      try {
-        await setBootOrderViaBackend(vmId, order);
-        await refreshVms();
-        addToast('info', `Boot order set: ${order}`);
-      } catch (error) {
-        addToast('error', error instanceof Error ? error.message : 'Failed to set boot order');
-      }
-    },
-    [addToast, refreshVms]
-  );
-
-  const handleInstallViaHomebrew = useCallback(async () => {
-    await openQemuInstallTerminalViaBackend();
-    addToast('info', 'Opened Terminal with QEMU install command');
-  }, [addToast]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -369,8 +349,6 @@ function App() {
           cpu: wizardConfig.cpu,
           memory: wizardConfig.ram,
           diskSizeGb: wizardConfig.disk,
-          installMediaPath: wizardConfig.installMediaPath || undefined,
-          bootOrder: wizardConfig.installMediaPath ? 'cdrom-first' : 'disk-first',
           networkType: wizardConfig.network === 'user' ? 'nat' : 'bridge',
           os: wizardConfig.os,
         });
@@ -402,8 +380,7 @@ function App() {
       <div className={`min-h-screen bg-gray-100 dark:bg-gray-900 ${isDarkMode ? 'dark' : ''}`}>
         <QemuSetupWizard
           detectionResult={qemuResult}
-          installSuggestion={installSuggestion}
-          onInstallViaHomebrew={handleInstallViaHomebrew}
+          installSuggestion={DEFAULT_INSTALL_SUGGESTION}
           onRetry={() => void checkQemu()}
           onSkip={() => {
             setAppState('ready');
@@ -445,6 +422,27 @@ function App() {
     </div>
   );
 
+  const runtimeBanner = runtimeBlocked ? (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
+      <p className="text-sm font-medium text-amber-900">Display blocked: SPICE runtime unavailable.</p>
+      <p className="text-xs text-amber-800">
+        Install OpenUTM Runtime to start VMs and use in-app display.
+      </p>
+      <div className="flex gap-2">
+        <Button onClick={() => void handleInstallManagedRuntime()} disabled={runtimeInstalling}>
+          {runtimeInstalling ? 'Installing OpenUTM Runtime...' : 'Install OpenUTM Runtime'}
+        </Button>
+        <Button variant="secondary" onClick={() => void checkQemu()}>
+          Retry
+        </Button>
+        <Button variant="ghost" onClick={() => void handleClearManagedRuntime()}>
+          Clear Managed Runtime
+        </Button>
+      </div>
+      {runtimeInstallError ? <p className="text-xs text-red-700">{runtimeInstallError}</p> : null}
+    </div>
+  ) : null;
+
   return (
     <MainLayout
       sidebar={sidebar}
@@ -452,34 +450,33 @@ function App() {
       isDarkMode={isDarkMode}
       onThemeToggle={() => setIsDarkMode(!isDarkMode)}
     >
-      {showWizard ? (
-        <VMWizard
-          onComplete={handleWizardComplete}
-          onCancel={() => setShowWizard(false)}
-          onPickInstallMedia={() => handlePickInstallMedia()}
-        />
-      ) : selectedVm ? (
-        <VMDetailView
-          vm={selectedVm}
-          displaySession={selectedDisplay}
-          displayBody={<SpiceViewer session={selectedDisplay} />}
-          onPickInstallMedia={(id) => void handlePickInstallMediaForVm(id)}
-          onEjectInstallMedia={(id) => void handleEjectInstallMedia(id)}
-          onSetBootOrder={(id, order) => void handleSetBootOrder(id, order)}
-          onOpenDisplay={(id) => void handleOpenDisplay(id)}
-          onCloseDisplay={(id) => void handleCloseDisplay(id)}
-          onUpdateConfig={handleUpdateConfig}
-          onAction={handleAction}
-          onDelete={handleDelete}
-        />
-      ) : (
-        <div className="flex items-center justify-center h-full text-gray-500">
-          <div className="text-center">
-            <p className="text-xl mb-2">No VM Selected</p>
-            <p className="text-sm">Select a VM from the sidebar or create a new one</p>
+      <div className="space-y-4">
+        {runtimeBanner}
+        {showWizard ? (
+          <VMWizard onComplete={handleWizardComplete} onCancel={() => setShowWizard(false)} />
+        ) : selectedVm ? (
+          <VMDetailView
+            vm={selectedVm}
+            displaySession={selectedDisplay}
+            onOpenDisplay={(id) => void handleOpenDisplay(id)}
+            onCloseDisplay={(id) => void handleCloseDisplay(id)}
+            onUpdateConfig={handleUpdateConfig}
+            onAction={handleAction}
+            onDelete={handleDelete}
+            disableStart={runtimeBlocked}
+            disableStartReason={RUNTIME_BLOCK_REASON}
+            disableDisplayOpen={runtimeBlocked}
+            disableDisplayOpenReason={RUNTIME_BLOCK_REASON}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full text-gray-500">
+            <div className="text-center">
+              <p className="text-xl mb-2">No VM Selected</p>
+              <p className="text-sm">Select a VM from the sidebar or create a new one</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </MainLayout>
   );
 }

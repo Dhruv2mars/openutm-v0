@@ -2,6 +2,9 @@ declare global {
   interface Window {
     openutm?: {
       detectQemu: () => Promise<unknown>;
+      getRuntimeStatus: () => Promise<unknown>;
+      installManagedRuntime: () => Promise<unknown>;
+      clearManagedRuntime: () => Promise<unknown>;
       listVms: () => Promise<unknown>;
       getVm: (id: string) => Promise<unknown>;
       createVm: (request: unknown) => Promise<unknown>;
