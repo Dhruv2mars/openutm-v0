@@ -22,6 +22,7 @@
   - Process up
   - Window count: `1`
   - Renderer process count: `1`
+  - QEMU setup UI renders in packaged app (no blank window)
 - Tauri packaged app launch: PASS
   - Process up
   - Window count: `1`
@@ -37,4 +38,5 @@
 
 ## Notes
 - Electron config storage moved to file-backed JSON store to avoid native sqlite packaging/runtime failures.
+- Electron packaged renderer asset base fixed to relative paths (`./assets/...`) to prevent white-screen on `file://` load.
 - Electron DMG build may intermittently fail locally (`hdiutil`); app bundle output remains valid via `electron-builder --dir`.
