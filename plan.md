@@ -128,12 +128,12 @@ Status: DONE
 - [x] 3.5 Add tests first for all behavior changes.
 
 ## Phase 4 — SPICE/QMP Feature Completeness (Both)
-Status: DONE
+Status: IN PROGRESS
 - [x] 4.1 Finalize runtime QMP handling.
-- [x] 4.2 Integrate SPICE session in app window.
-- [x] 4.3 Validate clipboard/audio/dynamic resolution.
-- [x] 4.4 Add failure/recovery flows.
-- [x] 4.5 Add protocol/UI transition tests.
+- [ ] 4.2 Integrate SPICE session in app window.
+- [ ] 4.3 Validate clipboard/audio/dynamic resolution.
+- [ ] 4.4 Add failure/recovery flows.
+- [ ] 4.5 Add protocol/UI transition tests.
 
 ## Phase 5 — Naming, Packaging, Manual Verification, Release
 Status: DONE
@@ -144,8 +144,8 @@ Status: DONE
 - [x] 5.5 Publish release checklist report.
 
 ## Phase 6 — Branch/PR Execution Discipline
-Status: DONE
+Status: IN PROGRESS
 - [x] 6.1 Use focused branch per task group.
 - [x] 6.2 Keep atomic commits.
-- [x] 6.3 Open PR with evidence.
-- [x] 6.4 Merge main + delete branch.
+- [ ] 6.3 Open PR with evidence.
+- [ ] 6.4 Merge main + delete branch.
