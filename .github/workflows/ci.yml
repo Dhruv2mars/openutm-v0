@@ -20,7 +20,7 @@ jobs:
         run: bun run verify:electron-release
 
   electron-x64-smoke:
-    runs-on: macos-13
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v1
