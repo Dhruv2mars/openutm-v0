@@ -10,13 +10,14 @@
     "dev": "node scripts/dev.mjs",
     "build": "vite build && node scripts/build-main.mjs",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src electron-src scripts vite.config.ts electron-env.d.ts --ext .ts,.tsx,.mjs --max-warnings=0",
     "test": "bun test",
     "pack": "bun run build && electron-builder --dir",
     "dist": "bun run build && electron-builder"
   },
   "build": {
     "appId": "com.openutm.electron",
-    "productName": "OpenUTM",
+    "productName": "OpenUTM (Electron)",
     "directories": {
       "output": "release"
     },

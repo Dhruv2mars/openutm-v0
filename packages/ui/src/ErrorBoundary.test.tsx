@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ErrorBoundary } from './ErrorBoundary';
 
 const ThrowError = ({ shouldThrow }: { shouldThrow: boolean }) => {
@@ -70,6 +70,37 @@ describe('ErrorBoundary', () => {
     );
 
     expect(screen.getByText('Try Again')).toBeInTheDocument();
+    expect(screen.getByText('Reload App')).toBeInTheDocument();
+  });
+
+  it('retries rendering after Try Again click', () => {
+    let shouldThrow = true;
+    const Flaky = () => {
+      if (shouldThrow) {
+        throw new Error('Flaky error');
+      }
+      return <div>Recovered</div>;
+    };
+
+    render(
+      <ErrorBoundary>
+        <Flaky />
+      </ErrorBoundary>
+    );
+
+    shouldThrow = false;
+    fireEvent.click(screen.getByText('Try Again'));
+    expect(screen.getByText('Recovered')).toBeInTheDocument();
+  });
+
+  it('handles Reload App button click', () => {
+    render(
+      <ErrorBoundary>
+        <ThrowError shouldThrow={true} />
+      </ErrorBoundary>
+    );
+
+    fireEvent.click(screen.getByText('Reload App'));
     expect(screen.getByText('Reload App')).toBeInTheDocument();
   });
 });

@@ -32,11 +32,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({
   }, []);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return;
-    
     const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, e.clientX));
     setSidebarWidth(newWidth);
-  }, [isResizing]);
+  }, []);
 
   useEffect(() => {
     if (isResizing) {

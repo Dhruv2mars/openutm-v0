@@ -22,8 +22,9 @@
     "build": "tsc && node scripts/build.js",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'No lint configured'",
-    "test": "vitest"
+    "lint": "eslint src --ext .ts,.tsx --max-warnings=0",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "react": "^18.2.0",

@@ -9,6 +9,7 @@ const TestComponent = () => {
     <div>
       <button onClick={() => addToast('success', 'Success message')}>Add Success</button>
       <button onClick={() => addToast('error', 'Error message')}>Add Error</button>
+      <button onClick={() => addToast('info', 'Sticky message', 0)}>Add Sticky</button>
       <div data-testid="toast-count">{toasts.length}</div>
     </div>
   );
@@ -80,5 +81,19 @@ describe('Toast', () => {
     }).toThrow('useToast must be used within a ToastProvider');
 
     consoleError.mockRestore();
+  });
+
+  it('removes toast when dismiss button is clicked', () => {
+    render(
+      <ToastProvider>
+        <TestComponent />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByText('Add Sticky'));
+    expect(screen.getByText('Sticky message')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Dismiss'));
+    expect(screen.queryByText('Sticky message')).not.toBeInTheDocument();
   });
 });

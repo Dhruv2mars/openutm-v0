@@ -52,6 +52,14 @@ async function detectAccelerators(): Promise<Accelerator[]> {
   return accelerators;
 }
 
+async function safeDetectAccelerators(): Promise<Accelerator[]> {
+  try {
+    return await detectAccelerators();
+  } catch {
+    return [Accelerator.TCG];
+  }
+}
+
 export async function detectQemu(): Promise<QemuDetectionResult> {
   try {
     const path = await getQemuPath();
@@ -60,7 +68,7 @@ export async function detectQemu(): Promise<QemuDetectionResult> {
         available: false,
         path: null,
         version: null,
-        accelerators: await detectAccelerators(),
+        accelerators: await safeDetectAccelerators(),
         minimumVersionMet: false,
       };
     }
@@ -88,7 +96,7 @@ export async function detectQemu(): Promise<QemuDetectionResult> {
       available: false,
       path: null,
       version: null,
-      accelerators: await detectAccelerators(),
+      accelerators: await safeDetectAccelerators(),
       minimumVersionMet: false,
     };
   }

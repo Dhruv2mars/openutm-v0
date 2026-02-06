@@ -18,7 +18,9 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts --max-warnings=0",
     "dev": "tsc --watch"
   },
   "dependencies": {
@@ -31,6 +33,6 @@
     "@types/eventemitter3": "^2.0.2",
     "@types/uuid": "^9.0.0",
     "typescript": "^5.3.3",
-    "vitest": "^1.1.0"
+    "vitest": "^4.0.18"
   }
 }

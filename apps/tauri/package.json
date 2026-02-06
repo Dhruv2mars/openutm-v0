@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
+    "lint": "eslint src vite.config.ts --ext .ts,.tsx --max-warnings=0",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

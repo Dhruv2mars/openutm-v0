@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button } from './Button';
 import { Card } from './Card';
 
@@ -39,11 +39,10 @@ export const QemuSetupWizard: React.FC<QemuSetupWizardProps> = ({
   const step = getStep();
 
   const handleHomebrewInstall = async () => {
-    if (!onInstallViaHomebrew) return;
     setIsInstalling(true);
     setInstallError(null);
     try {
-      await onInstallViaHomebrew();
+      await onInstallViaHomebrew!();
       onRetry();
     } catch (err) {
       setInstallError(err instanceof Error ? err.message : 'Installation failed');

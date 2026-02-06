@@ -131,3 +131,9 @@ Critical: When creating the plan.md content, your are responsible for deciding w
 - Quickemu: https://github.com/quickemu-project/quickemu
 - Tauri: https://tauri.app
 - QMP: https://wiki.qemu.org/Documentation/QMP
+
+## Approved Context (2026-02-06)
+- Release target now: macOS only.
+- Must ship both apps public-ready; verify via manual + automated testing in both apps.
+- App naming must clearly include framework suffix `(Tauri)` / `(Electron)` on user-facing identity.
+- After planning approval: update plan docs first; wait for user `Go` before execution.

@@ -37,8 +37,8 @@ export const VMListSidebar: React.FC<VMListSidebarProps> = ({
   onContextMenu,
 }) => {
   const sortedVMs = [...vms].sort((a, b) => {
-    if (a.status === 'running' && b.status !== 'running') return -1;
-    if (a.status !== 'running' && b.status === 'running') return 1;
+    const runningPriority = Number(a.status !== 'running') - Number(b.status !== 'running');
+    if (runningPriority !== 0) return runningPriority;
     return a.name.localeCompare(b.name);
   });
 

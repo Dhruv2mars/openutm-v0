@@ -13,12 +13,23 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck"
+    "test:native": "cargo test --manifest-path apps/tauri/src-tauri/Cargo.toml",
+    "typecheck": "turbo run typecheck",
+    "coverage": "bun run --cwd packages/shared-types test:coverage && bun run --cwd packages/qemu-lib test:coverage && bun run --cwd packages/vm-core test:coverage && bun run --cwd packages/ui test:coverage",
+    "verify:release": "bun run lint && bun run typecheck && bun run test && bun run test:native && bun run coverage && bun run build",
+    "install:macos-apps": "bash scripts/install-macos-apps.sh"
   },
   "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "eslint": "^9.20.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.14.0",
     "happy-dom": "^20.5.0",
+    "typescript-eslint": "^8.24.1",
     "turbo": "^2.0.0"
   }
 }
