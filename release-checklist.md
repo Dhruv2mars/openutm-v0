@@ -35,6 +35,11 @@
 - Electron runtime wired to real IPC/backend (no renderer mocks): PASS
 - Tauri runtime wired to real invoke/backend (no renderer mocks): PASS
 - VM CRUD/lifecycle routes implemented end-to-end in both apps: PASS
+- Display session lifecycle (`open/get/close`, reconnect/disconnect transitions) in both apps: PASS
+- Shared display session schema validation + UI tab state transitions: PASS
+
+## Install UX
+- CLI install script replaces app bundles in `/Applications` without Finder drag/replace prompt: PASS
 
 ## Notes
 - Electron config storage moved to file-backed JSON store to avoid native sqlite packaging/runtime failures.
