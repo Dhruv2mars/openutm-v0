@@ -1,27 +1,31 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { registerIpcHandlers } from '../electron-src/ipc-handlers';
+import { resolveAssetBasePath } from './asset-path';
 
 let mainWindow: BrowserWindow | null = null;
 
 const createWindow = () => {
+  const appPath = app.getAppPath();
+  const assetBase = resolveAssetBasePath(appPath);
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, './preload.js'),
+      preload: path.join(assetBase, 'preload.cjs'),
       nodeIntegration: false,
-      contextIsolation: true
-    }
+      contextIsolation: true,
+    },
   });
 
   mainWindow.setTitle('OpenUTM (Electron)');
 
-  const url = process.env.VITE_DEV_SERVER_URL || `file://${path.join(__dirname, './renderer/index.html')}`;
-  mainWindow.loadURL(url);
+  if (process.env.VITE_DEV_SERVER_URL) {
+    void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+  } else {
+    void mainWindow.loadFile(path.join(assetBase, 'renderer', 'index.html'));
+  }
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.webContents.openDevTools();
@@ -32,7 +36,15 @@ const createWindow = () => {
   });
 };
 
-app.on('ready', createWindow);
+app.on('ready', () => {
+  try {
+    registerIpcHandlers();
+  } catch (error) {
+    console.error('Failed to register Electron IPC handlers', error);
+  }
+
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

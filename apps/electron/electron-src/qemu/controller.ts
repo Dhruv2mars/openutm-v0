@@ -19,6 +19,7 @@ interface VMConfig {
 }
 
 const runningVMs = new Map<string, VMProcess>();
+const pausedVMs = new Set<string>();
 let spawnFn = defaultSpawn;
 let connectQMPFn = defaultConnectQMP;
 
@@ -33,7 +34,7 @@ export function setConnectQMPFn(fn: typeof defaultConnectQMP): void {
 // For testing: allow passing config directly
 export async function startVM(vmId: string, config?: VMConfig): Promise<{ vmId: string; pid: number }> {
   try {
-    let vmConfig = config;
+    let vmConfig: VMConfig | null | undefined = config;
     if (!vmConfig) {
       vmConfig = await getVMConfig(vmId);
       if (!vmConfig) {
@@ -53,9 +54,11 @@ export async function startVM(vmId: string, config?: VMConfig): Promise<{ vmId: 
       process: qemuProcess,
       qmpSocket: vmConfig.qmpSocket
     });
+    pausedVMs.delete(vmId);
 
     qemuProcess.on('exit', () => {
       runningVMs.delete(vmId);
+      pausedVMs.delete(vmId);
     });
 
     return { vmId, pid: qemuProcess.pid };
@@ -84,6 +87,7 @@ export async function stopVM(vmId: string): Promise<{ vmId: string; success: boo
     }
 
     runningVMs.delete(vmId);
+    pausedVMs.delete(vmId);
     return { vmId, success: true };
   } catch (err) {
     throw new Error(`Failed to stop VM: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -100,6 +104,7 @@ export async function pauseVM(vmId: string): Promise<{ vmId: string; success: bo
     const qmp = await connectQMPFn(vm.qmpSocket);
     await qmp.executeCommand('stop');
     qmp.disconnect();
+    pausedVMs.add(vmId);
 
     return { vmId, success: true };
   } catch (err) {
@@ -117,6 +122,7 @@ export async function resumeVM(vmId: string): Promise<{ vmId: string; success: b
     const qmp = await connectQMPFn(vm.qmpSocket);
     await qmp.executeCommand('cont');
     qmp.disconnect();
+    pausedVMs.delete(vmId);
 
     return { vmId, success: true };
   } catch (err) {
@@ -150,4 +156,14 @@ export function getRunningVMs(): string[] {
 
 export function isVMRunning(vmId: string): boolean {
   return runningVMs.has(vmId);
+}
+
+export function getVmRuntimeStatus(vmId: string): 'running' | 'paused' | 'stopped' {
+  if (!runningVMs.has(vmId)) {
+    return 'stopped';
+  }
+  if (pausedVMs.has(vmId)) {
+    return 'paused';
+  }
+  return 'running';
 }

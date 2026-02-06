@@ -1,0 +1,133 @@
+import { VMStatus } from "@openutm/shared-types";
+import type { VM } from "@openutm/shared-types";
+import type { QemuDetectionResult } from "@openutm/ui";
+
+export interface IpcResult<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+export interface DetectQemuPayload {
+  path: string;
+  version: string;
+  accelerators: string[];
+}
+
+export interface CreateVmRequest {
+  name: string;
+  cpu: number;
+  memory: number;
+  diskSizeGb: number;
+  networkType: "nat" | "bridge";
+  os: "linux" | "windows" | "macos" | "other";
+}
+
+export interface UpdateVmRequest {
+  id: string;
+  name?: string;
+  cpu?: number;
+  memory?: number;
+}
+
+interface ElectronBridge {
+  detectQemu: () => Promise<IpcResult<DetectQemuPayload>>;
+  listVms: () => Promise<IpcResult<VM[]>>;
+  createVm: (request: CreateVmRequest) => Promise<IpcResult<VM>>;
+  updateVm: (request: UpdateVmRequest) => Promise<IpcResult<VM>>;
+  deleteVm: (id: string) => Promise<IpcResult<{ success: boolean }>>;
+  startVm: (id: string) => Promise<IpcResult<{ success: boolean }>>;
+  stopVm: (id: string) => Promise<IpcResult<{ success: boolean }>>;
+  pauseVm: (id: string) => Promise<IpcResult<{ success: boolean }>>;
+  resumeVm: (id: string) => Promise<IpcResult<{ success: boolean }>>;
+}
+
+function getBridge(): ElectronBridge {
+  if (typeof window === "undefined" || !window.openutm) {
+    throw new Error("Electron bridge unavailable");
+  }
+
+  return window.openutm as ElectronBridge;
+}
+
+function unwrapResult<T>(result: IpcResult<T>, fallback: string): T {
+  if (!result.success || result.data === undefined) {
+    throw new Error(result.error || fallback);
+  }
+  return result.data;
+}
+
+function parseMajor(version: string | null): number | null {
+  if (!version) {
+    return null;
+  }
+  const match = version.match(/version\s+(\d+)/i);
+  if (!match || !match[1]) {
+    return null;
+  }
+  return Number.parseInt(match[1], 10);
+}
+
+function normalizeVm(vm: VM): VM {
+  const status = Object.values(VMStatus).includes(vm.status) ? vm.status : VMStatus.Error;
+  return {
+    ...vm,
+    status,
+  };
+}
+
+export async function detectQemuViaBackend(): Promise<QemuDetectionResult> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.detectQemu(), "Failed to detect QEMU");
+  const major = parseMajor(data.version || null);
+  return {
+    available: true,
+    path: data.path,
+    version: data.version,
+    accelerators: data.accelerators,
+    minimumVersionMet: major !== null ? major >= 6 : false,
+  };
+}
+
+export async function listVmsViaBackend(): Promise<VM[]> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.listVms(), "Failed to list VMs");
+  return data.map(normalizeVm);
+}
+
+export async function createVmViaBackend(request: CreateVmRequest): Promise<VM> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.createVm(request), "Failed to create VM");
+  return normalizeVm(data);
+}
+
+export async function updateVmViaBackend(request: UpdateVmRequest): Promise<VM> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.updateVm(request), "Failed to update VM");
+  return normalizeVm(data);
+}
+
+export async function deleteVmViaBackend(id: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.deleteVm(id), "Failed to delete VM");
+}
+
+export async function startVmViaBackend(id: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.startVm(id), "Failed to start VM");
+}
+
+export async function stopVmViaBackend(id: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.stopVm(id), "Failed to stop VM");
+}
+
+export async function pauseVmViaBackend(id: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.pauseVm(id), "Failed to pause VM");
+}
+
+export async function resumeVmViaBackend(id: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.resumeVm(id), "Failed to resume VM");
+}

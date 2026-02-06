@@ -10,13 +10,13 @@ try {
   execSync('tsc --noEmit', { cwd: appDir, stdio: 'inherit' });
   
   console.log('Bundling main.ts...');
-  execSync(`esbuild src/main.ts --bundle --platform=node --format=esm --external:electron --outfile=dist/main.js`, {
+  execSync(`esbuild src/main.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/main.cjs`, {
     cwd: appDir,
     stdio: 'inherit'
   });
 
   console.log('Bundling preload.ts...');
-  execSync(`esbuild src/preload.ts --bundle --platform=node --format=esm --external:electron --outfile=dist/preload.js`, {
+  execSync(`esbuild src/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload.cjs`, {
     cwd: appDir,
     stdio: 'inherit'
   });

@@ -1,4 +1,4 @@
-import { execSync, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { platform } from 'os';
 
@@ -118,4 +118,3 @@ export async function detectQemu(): Promise<QemuInfo> {
     accelerators
   };
 }
-
