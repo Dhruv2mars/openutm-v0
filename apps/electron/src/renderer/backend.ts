@@ -16,11 +16,17 @@ export interface DetectQemuPayload {
   accelerators: string[];
 }
 
+interface QemuInstallCommandPayload {
+  command: string;
+}
+
 export interface CreateVmRequest {
   name: string;
   cpu: number;
   memory: number;
   diskSizeGb: number;
+  installMediaPath?: string;
+  bootOrder: "disk-first" | "cdrom-first";
   networkType: "nat" | "bridge";
   os: "linux" | "windows" | "macos" | "other";
 }
@@ -45,6 +51,12 @@ interface ElectronBridge {
   openDisplay: (id: string) => Promise<IpcResult<DisplaySession>>;
   getDisplay: (id: string) => Promise<IpcResult<DisplaySession | null>>;
   closeDisplay: (id: string) => Promise<IpcResult<{ success: boolean }>>;
+  getQemuInstallCommand: () => Promise<IpcResult<QemuInstallCommandPayload>>;
+  openQemuInstallTerminal: () => Promise<IpcResult<{ success: boolean }>>;
+  pickInstallMedia: (id?: string) => Promise<IpcResult<string | null>>;
+  setInstallMedia: (id: string, path: string) => Promise<IpcResult<{ success: boolean }>>;
+  ejectInstallMedia: (id: string) => Promise<IpcResult<{ success: boolean }>>;
+  setBootOrder: (id: string, order: "disk-first" | "cdrom-first") => Promise<IpcResult<{ success: boolean }>>;
 }
 
 function getBridge(): ElectronBridge {
@@ -75,9 +87,30 @@ function parseMajor(version: string | null): number | null {
 
 function normalizeVm(vm: VM): VM {
   const status = Object.values(VMStatus).includes(vm.status) ? vm.status : VMStatus.Error;
+  const config = vm.config || {
+    cpu: 2,
+    memory: 2048,
+    disks: [],
+    network: { type: "nat" as const },
+    bootOrder: "disk-first" as const,
+    networkType: "nat" as const,
+  };
+  const installMediaPath = config.installMediaPath;
+  const bootOrder = config.bootOrder || "disk-first";
+  const networkType = config.networkType || config.network.type || "nat";
   return {
     ...vm,
     status,
+    config: {
+      ...config,
+      installMediaPath,
+      bootOrder,
+      networkType,
+      network: {
+        ...config.network,
+        type: networkType,
+      },
+    },
   };
 }
 
@@ -159,4 +192,36 @@ export async function getDisplayViaBackend(id: string): Promise<DisplaySession |
 export async function closeDisplayViaBackend(id: string): Promise<void> {
   const bridge = getBridge();
   unwrapResult(await bridge.closeDisplay(id), "Failed to close display session");
+}
+
+export async function pickInstallMediaViaBackend(id?: string): Promise<string | null> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.pickInstallMedia(id), "Failed to pick install media");
+  return data || null;
+}
+
+export async function setInstallMediaViaBackend(id: string, path: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.setInstallMedia(id, path), "Failed to set install media");
+}
+
+export async function ejectInstallMediaViaBackend(id: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.ejectInstallMedia(id), "Failed to eject install media");
+}
+
+export async function setBootOrderViaBackend(id: string, order: "disk-first" | "cdrom-first"): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.setBootOrder(id, order), "Failed to set boot order");
+}
+
+export async function getQemuInstallCommandViaBackend(): Promise<string> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.getQemuInstallCommand(), 'Failed to get QEMU install command');
+  return data.command;
+}
+
+export async function openQemuInstallTerminalViaBackend(): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.openQemuInstallTerminal(), 'Failed to open QEMU install terminal');
 }

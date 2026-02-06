@@ -1,155 +1,98 @@
-import { describe, it, expect, mock, spyOn } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { execSync } from 'child_process';
 import * as detector from './detector';
 
 describe('QEMU Detection (Electron)', () => {
   const isQemuInstalled = (): boolean => {
     try {
-      execSync('which qemu-system-x86_64', { stdio: 'ignore' });
+      execSync('which qemu-system-x86_64 || which qemu-system-aarch64', { stdio: 'ignore' });
       return true;
     } catch {
       return false;
     }
   };
 
-  const skipIfNoQemu = () => {
-    if (!isQemuInstalled()) {
-      // Skip test - QEMU not installed in test environment
-    }
-  };
-
   describe('detectQemu', () => {
-    it('should return QemuInfo with path and version when QEMU is found', async () => {
-      skipIfNoQemu();
-      try {
-        const result = await detector.detectQemu();
-        expect(result).toBeDefined();
-        expect(result.path).toBeDefined();
-        expect(result.version).toBeDefined();
-      } catch (e) {
-        const error = e as Error;
-        expect(error.message).toContain('QEMU not found');
+    it('returns info when QEMU is installed, otherwise throws a helpful error', async () => {
+      if (isQemuInstalled()) {
+      const result = await detector.detectQemu();
+      expect(result.path).toContain('qemu-system-');
+      expect(result.version.length).toBeGreaterThan(0);
+      expect(Array.isArray(result.accelerators)).toBe(true);
+      expect(typeof result.spiceSupported).toBe('boolean');
+      return;
       }
+
+      await expect(detector.detectQemu()).rejects.toThrow('QEMU not found');
     });
 
-    it('should throw error when QEMU not found', async () => {
-      try {
-        await detector.detectQemu();
-        expect(true).toBe(false);
-      } catch (e) {
-        const error = e as Error;
-        expect(error.message).toContain('QEMU');
-      }
-    });
-
-    it('should detect version from --version output', () => {
+    it('reports a non-empty version string when installed', async () => {
       if (!isQemuInstalled()) return;
-      
-      const result = detector.detectQemu();
+      const result = await detector.detectQemu();
       expect(result.version).toBeDefined();
       expect(result.version).not.toEqual('');
     });
   });
 
-  describe('Accelerator Detection', () => {
-    it('should detect HVF on macOS', () => {
-      if (process.platform !== 'darwin') return;
+  describe('accelerators', () => {
+    it('returns an array and includes a fallback accelerator', async () => {
       if (!isQemuInstalled()) return;
-
-      const result = detector.detectQemu();
-      expect(result.accelerators).toBeDefined();
+      const result = await detector.detectQemu();
       expect(Array.isArray(result.accelerators)).toBe(true);
+      expect(result.accelerators.length).toBeGreaterThan(0);
+      expect(result.accelerators).toContain('tcg');
     });
 
-    it('should detect KVM on Linux', () => {
-      if (process.platform !== 'linux') return;
+    it('matches accelerator list exposed by qemu -accel help when available', async () => {
       if (!isQemuInstalled()) return;
 
-      const result = detector.detectQemu();
-      expect(result.accelerators).toBeDefined();
-      expect(Array.isArray(result.accelerators)).toBe(true);
-    });
+      let accelHelp = '';
+      try {
+        accelHelp = execSync('qemu-system-x86_64 -accel help', { encoding: 'utf8' });
+      } catch {
+        return;
+      }
 
-    it('should detect TCG as fallback', () => {
-      if (!isQemuInstalled()) return;
+      const parsed = accelHelp
+        .split('\n')
+        .map((line) => line.trim().toLowerCase())
+        .filter((line) => ['hvf', 'kvm', 'whpx', 'tcg'].includes(line));
+      if (parsed.length === 0) return;
 
-      const result = detector.detectQemu();
-      expect(result.accelerators).toBeDefined();
-      expect(Array.isArray(result.accelerators)).toBe(true);
+      const result = await detector.detectQemu();
+      expect(result.accelerators).toEqual(parsed);
     });
   });
 
-  describe('QEMU Path Detection', () => {
-    it('should return valid path to QEMU binary', () => {
+  describe('path detection', () => {
+    it('returns a QEMU binary path', async () => {
       if (!isQemuInstalled()) return;
-
-      const result = detector.detectQemu();
-      expect(result.path).toBeDefined();
-      expect(result.path).not.toEqual('');
+      const result = await detector.detectQemu();
       expect(result.path).toContain('qemu');
-    });
-
-    it('should detect x86_64 or aarch64 binary', () => {
-      if (!isQemuInstalled()) return;
-
-      const result = detector.detectQemu();
       expect(result.path).toMatch(/qemu-system-(x86_64|aarch64)/);
     });
   });
 
-  describe('Error Handling', () => {
-    it('should provide helpful error for missing QEMU', () => {
+  describe('display capability', () => {
+    it('reports spice support based on qemu probe', async () => {
+      if (!isQemuInstalled()) return;
+      const result = await detector.detectQemu();
+      let supportsSpice = false;
+      try {
+        const output = execSync('qemu-system-x86_64 -spice help 2>&1 || true', { encoding: 'utf8' });
+        supportsSpice = output.toLowerCase().includes('spice options:');
+      } catch {
+        supportsSpice = false;
+      }
+      expect(result.spiceSupported).toBe(supportsSpice);
+    });
+  });
+
+  describe('error messaging', () => {
+    it('documents the expected missing-QEMU guidance', () => {
       const message = 'QEMU not found in PATH. Please install QEMU.';
       expect(message).toContain('PATH');
-    });
-
-    it('should handle command execution failures gracefully', () => {
-      expect(() => {
-        try {
-          execSync('invalid-command-that-does-not-exist-xyz123', { stdio: 'pipe' });
-        } catch (e) {
-          expect(e).toBeDefined();
-        }
-      }).not.toThrow();
-    });
-  });
-
-  describe('Architecture Support', () => {
-    it('should support x86_64 architecture', () => {
-      try {
-        execSync('which qemu-system-x86_64', { stdio: 'ignore' });
-        expect(true).toBe(true);
-      } catch {
-        // Not available - acceptable
-      }
-    });
-
-    it('should support aarch64 architecture', () => {
-      try {
-        execSync('which qemu-system-aarch64', { stdio: 'ignore' });
-        expect(true).toBe(true);
-      } catch {
-        // Not available - acceptable
-      }
-    });
-  });
-
-  describe('QemuInfo Interface', () => {
-    it('should have required fields', () => {
-      if (!isQemuInstalled()) return;
-
-      const result = detector.detectQemu();
-      expect(result).toHaveProperty('path');
-      expect(result).toHaveProperty('version');
-      expect(result).toHaveProperty('accelerators');
-    });
-
-    it('should have array accelerators', () => {
-      if (!isQemuInstalled()) return;
-
-      const result = detector.detectQemu();
-      expect(Array.isArray(result.accelerators)).toBe(true);
+      expect(message).toContain('install QEMU');
     });
   });
 });
-

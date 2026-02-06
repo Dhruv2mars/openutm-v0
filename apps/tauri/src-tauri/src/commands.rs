@@ -38,6 +38,12 @@ fn validate_vm_config(config: &VMConfig) -> std::result::Result<(), String> {
     if config.disk_size_gb == 0 {
         return Err("Disk size must be at least 1 GB".to_string());
     }
+    if config.boot_order != "disk-first" && config.boot_order != "cdrom-first" {
+        return Err("Boot order must be disk-first or cdrom-first".to_string());
+    }
+    if config.network_type != "nat" && config.network_type != "bridge" {
+        return Err("Network type must be nat or bridge".to_string());
+    }
 
     Ok(())
 }
@@ -73,6 +79,9 @@ fn map_record_to_vm(record: VMRecord) -> VM {
             cpu_cores: record.cpu_cores,
             disk_size_gb: record.disk_size_gb,
             os: record.os,
+            install_media_path: record.install_media_path,
+            boot_order: record.boot_order,
+            network_type: record.network_type,
         },
     }
 }
@@ -147,6 +156,21 @@ fn build_start_args(vm: &VMRecord, disk: &str, qmp_socket: &str) -> std::result:
         args.remove(0);
     }
 
+    if let Some(install_media_path) = &vm.install_media_path {
+        args.push("-drive".to_string());
+        args.push(format!(
+            "file={},media=cdrom,if=ide,readonly=on",
+            install_media_path
+        ));
+    }
+
+    args.push("-boot".to_string());
+    if vm.boot_order == "cdrom-first" {
+        args.push("order=d,menu=on".to_string());
+    } else {
+        args.push("order=c,menu=on".to_string());
+    }
+
     args.push("-qmp".to_string());
     args.push(format!("unix:{},server=on,wait=off", qmp_socket));
     args.push("-name".to_string());
@@ -179,6 +203,7 @@ fn build_display_session(vm_id: &str, status: &str, reconnect_attempts: u32, las
         status: status.to_string(),
         reconnect_attempts,
         last_error,
+        connected_at: Some(chrono::Utc::now().to_rfc3339()),
     }
 }
 
@@ -208,6 +233,9 @@ pub async fn create_vm(state: State<'_, CommandState>, config: VMConfig) -> std:
         cpu_cores: config.cpu_cores,
         disk_size_gb: config.disk_size_gb,
         os: config.os.clone(),
+        install_media_path: config.install_media_path.clone(),
+        boot_order: config.boot_order.clone(),
+        network_type: config.network_type.clone(),
     };
 
     if let Err(err) = state.config_store.create_vm(&record).map_err(|e| e.to_string()) {
@@ -257,6 +285,75 @@ pub async fn update_vm(
         .map_err(|e| e.to_string())?;
 
     Ok(map_record_to_vm(record))
+}
+
+/// Pick install media file using native dialog
+#[tauri::command]
+pub async fn pick_install_media(id: Option<String>) -> std::result::Result<Option<String>, String> {
+    if let Some(vm_id) = id {
+        if vm_id.trim().is_empty() {
+            return Err("VM ID cannot be empty".to_string());
+        }
+    }
+
+    let selected = rfd::FileDialog::new()
+        .add_filter("Install Media", &["iso", "img"])
+        .pick_file();
+
+    Ok(selected.map(|path| path.display().to_string()))
+}
+
+/// Set install media path for a VM
+#[tauri::command]
+pub async fn set_install_media(
+    state: State<'_, CommandState>,
+    id: String,
+    path: String,
+) -> std::result::Result<(), String> {
+    if id.trim().is_empty() {
+        return Err("VM ID cannot be empty".to_string());
+    }
+    if path.trim().is_empty() {
+        return Err("Install media path cannot be empty".to_string());
+    }
+
+    let mut record = fetch_vm_or_err(&state.config_store, &id)?;
+    record.install_media_path = Some(path);
+    state.config_store.update_vm(&record).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Eject install media for a VM
+#[tauri::command]
+pub async fn eject_install_media(state: State<'_, CommandState>, id: String) -> std::result::Result<(), String> {
+    if id.trim().is_empty() {
+        return Err("VM ID cannot be empty".to_string());
+    }
+
+    let mut record = fetch_vm_or_err(&state.config_store, &id)?;
+    record.install_media_path = None;
+    state.config_store.update_vm(&record).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Set VM boot order
+#[tauri::command]
+pub async fn set_boot_order(
+    state: State<'_, CommandState>,
+    id: String,
+    order: String,
+) -> std::result::Result<(), String> {
+    if id.trim().is_empty() {
+        return Err("VM ID cannot be empty".to_string());
+    }
+    if order != "disk-first" && order != "cdrom-first" {
+        return Err("Boot order must be disk-first or cdrom-first".to_string());
+    }
+
+    let mut record = fetch_vm_or_err(&state.config_store, &id)?;
+    record.boot_order = order;
+    state.config_store.update_vm(&record).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Start a VM by ID
@@ -400,6 +497,7 @@ pub async fn open_display(state: State<'_, CommandState>, id: String) -> std::re
             existing.status = "connected".to_string();
             existing.reconnect_attempts += 1;
             existing.last_error = None;
+            existing.connected_at = Some(chrono::Utc::now().to_rfc3339());
         }
         return Ok(existing.clone());
     }
@@ -460,6 +558,9 @@ mod tests {
             cpu_cores: 0,
             disk_size_gb: 0,
             os: "linux".to_string(),
+            install_media_path: None,
+            boot_order: "disk-first".to_string(),
+            network_type: "nat".to_string(),
         };
 
         let result = validate_vm_config(&config);
@@ -481,6 +582,9 @@ mod tests {
             cpu_cores: 4,
             disk_size_gb: 64,
             os: "linux".to_string(),
+            install_media_path: None,
+            boot_order: "disk-first".to_string(),
+            network_type: "nat".to_string(),
         };
 
         let vm = map_record_to_vm(record);
@@ -501,6 +605,9 @@ mod tests {
             cpu_cores: 2,
             disk_size_gb: 20,
             os: "linux".to_string(),
+            install_media_path: Some("/isos/fedora.iso".to_string()),
+            boot_order: "cdrom-first".to_string(),
+            network_type: "nat".to_string(),
         };
 
         let args = build_start_args(&record, "/tmp/vm-1.qcow2", "/tmp/openutm-qmp-vm-1.sock")
@@ -512,6 +619,10 @@ mod tests {
         assert!(joined.contains("-name Fedora VM"));
         assert!(joined.contains("-spice"));
         assert!(joined.contains(&format!("port={}", resolve_spice_port("vm-1"))));
+        assert!(joined.contains("media=cdrom"));
+        assert!(joined.contains("/isos/fedora.iso"));
+        assert!(joined.contains("-boot"));
+        assert!(joined.contains("order=d"));
     }
 
     #[test]

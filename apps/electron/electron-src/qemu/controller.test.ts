@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import { ChildProcess } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
 import * as controller from './controller';
 import { DisplaySessionStatus } from '@openutm/shared-types';
 
@@ -11,6 +14,9 @@ const testConfigs = {
     memory: 2048,
     cores: 2,
     disk: '/tmp/test.qcow2',
+    installMediaPath: '/isos/ubuntu.iso',
+    bootOrder: 'cdrom-first',
+    networkType: 'nat',
     qmpSocket: '/tmp/qmp-vm-test-1.sock',
     accelerator: 'hvf',
   },
@@ -20,6 +26,8 @@ const testConfigs = {
     memory: 4096,
     cores: 4,
     disk: '/tmp/test2.qcow2',
+    bootOrder: 'disk-first',
+    networkType: 'nat',
     qmpSocket: '/tmp/qmp-vm-test-2.sock',
     accelerator: 'hvf',
   },
@@ -67,16 +75,26 @@ const connectQMPMock = mock(async (socketPath: string) => {
   return mockQMPClient;
 });
 
+const detectQemuMock = mock(async () => ({
+  path: '/opt/homebrew/bin/qemu-system-aarch64',
+  version: 'QEMU emulator version 9.0.0',
+  accelerators: ['hvf', 'tcg'],
+  spiceSupported: true,
+}));
+
 describe('VM Process Controller', () => {
   beforeEach(() => {
+    delete process.env.OPENUTM_CONFIG_DIR;
     controller.resetRuntimeStateForTests();
     spawnMock.mockClear?.();
     (mockQMPClient.executeCommand as any).mockClear?.();
     (mockQMPClient.disconnect as any).mockClear?.();
     (connectQMPMock as any).mockClear?.();
+    (detectQemuMock as any).mockClear?.();
     mockPid = 12345;
     controller.setSpawnFn(spawnMock as any);
     controller.setConnectQMPFn(connectQMPMock as any);
+    controller.setDetectQemuFn(detectQemuMock as any);
   });
 
   describe('startVM()', () => {
@@ -86,6 +104,11 @@ describe('VM Process Controller', () => {
       expect(result).toHaveProperty('vmId', 'vm-test-1');
       expect(result).toHaveProperty('pid');
       expect(typeof result.pid).toBe('number');
+      expect(spawnMock).toHaveBeenCalledWith(
+        '/opt/homebrew/bin/qemu-system-aarch64',
+        expect.any(Array),
+        expect.objectContaining({ stdio: 'ignore' })
+      );
     });
 
     it('returns handle with vm id and process pid', async () => {
@@ -103,8 +126,9 @@ describe('VM Process Controller', () => {
     });
 
     it('throws error if VM config not found', async () => {
+      process.env.OPENUTM_CONFIG_DIR = mkdtempSync(path.join(tmpdir(), 'openutm-controller-empty-'));
       try {
-        await controller.startVM('vm-nonexistent');
+        await controller.startVM('vm-nonexistent-does-not-exist');
         expect.unreachable('Should have thrown error');
       } catch (err) {
         expect(err).toBeInstanceOf(Error);
@@ -121,9 +145,39 @@ describe('VM Process Controller', () => {
       }
     });
 
+    it('throws when spawned process has no pid', async () => {
+      controller.setSpawnFn((() => ({
+        pid: undefined,
+        on: mock(() => {}),
+        kill: mock(() => true),
+      })) as any);
+
+      await expect(controller.startVM('vm-test-1', testConfigs['vm-test-1'])).rejects.toThrow(
+        'Failed to spawn QEMU process'
+      );
+    });
+
     it('sets up process monitoring (exit handler)', async () => {
       const result = await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
       expect(result.pid).toBeGreaterThan(0);
+    });
+
+    it('cleans runtime maps when process exit event fires', async () => {
+      let exitHandler: (() => void) | null = null;
+      controller.setSpawnFn((() => ({
+        pid: 9999,
+        on: mock((event: string, handler: () => void) => {
+          if (event === 'exit') {
+            exitHandler = handler;
+          }
+          return undefined;
+        }),
+        kill: mock(() => true),
+      })) as any);
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      expect(controller.isVMRunning('vm-test-1')).toBe(true);
+      exitHandler?.();
+      expect(controller.isVMRunning('vm-test-1')).toBe(false);
     });
 
     it('adds spice arguments with deterministic port', async () => {
@@ -135,6 +189,45 @@ describe('VM Process Controller', () => {
       expect(args[spiceIndex + 1]).toContain('disable-ticketing=on');
       expect(args[spiceIndex + 1]).toContain('addr=127.0.0.1');
       expect(args[spiceIndex + 1]).toContain(`port=${controller.resolveSpicePort('vm-test-1')}`);
+    });
+
+    it('adds install media and cdrom-first boot args when ISO exists', async () => {
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      const args = (spawnMock as any).mock.calls[0][1] as string[];
+      const joined = args.join(' ');
+      expect(joined).toContain('media=cdrom');
+      expect(joined).toContain('/isos/ubuntu.iso');
+      expect(joined).toContain('-boot');
+      expect(joined).toContain('order=d');
+    });
+
+    it('falls back to detected accelerator when configured one is unsupported', async () => {
+      controller.setDetectQemuFn((async () => ({
+        path: '/opt/homebrew/bin/qemu-system-aarch64',
+        version: 'QEMU emulator version 10.2.0',
+        accelerators: ['tcg'],
+        spiceSupported: true,
+      })) as any);
+
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      const args = (spawnMock as any).mock.calls[0][1] as string[];
+      const accelIndex = args.indexOf('-accel');
+      expect(accelIndex).toBeGreaterThan(-1);
+      expect(args[accelIndex + 1]).toBe('tcg');
+    });
+
+    it('omits spice args when detector reports spice unsupported', async () => {
+      controller.setDetectQemuFn((async () => ({
+        path: '/opt/homebrew/bin/qemu-system-aarch64',
+        version: 'QEMU emulator version 10.2.0',
+        accelerators: ['tcg'],
+        spiceSupported: false,
+      })) as any);
+
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      const args = (spawnMock as any).mock.calls[0][1] as string[];
+      expect(args.includes('-spice')).toBe(false);
+      expect(args.includes('-display')).toBe(false);
     });
   });
 
@@ -173,6 +266,26 @@ describe('VM Process Controller', () => {
       expect(stopResult.success).toBe(true);
     });
 
+    it('kills process directly when VM has no qmp socket', async () => {
+      await controller.startVM('vm-test-no-qmp', {
+        ...testConfigs['vm-test-2'],
+        id: 'vm-test-no-qmp',
+        qmpSocket: undefined,
+      } as any);
+
+      const stopResult = await controller.stopVM('vm-test-no-qmp');
+      expect(stopResult.success).toBe(true);
+    });
+
+    it('falls back to process kill when qmp quit fails', async () => {
+      (mockQMPClient.executeCommand as any).mockImplementationOnce(async () => {
+        throw new Error('qmp quit failed');
+      });
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      const result = await controller.stopVM('vm-test-1');
+      expect(result.success).toBe(true);
+    });
+
     it('removes VM from running VMs map', async () => {
       await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
       await controller.stopVM('vm-test-1');
@@ -184,6 +297,17 @@ describe('VM Process Controller', () => {
         expect((err as Error).message).toContain('not running');
       }
     });
+
+    it('reports running VM IDs after start', async () => {
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      expect(controller.getRunningVMs()).toContain('vm-test-1');
+      expect(controller.isVMRunning('vm-test-1')).toBe(true);
+      expect(controller.getVmRuntimeStatus('vm-test-1')).toBe('running');
+    });
+
+    it('reports stopped status for missing vm', () => {
+      expect(controller.getVmRuntimeStatus('missing-vm')).toBe('stopped');
+    });
   });
 
   describe('pauseVM()', () => {
@@ -194,6 +318,7 @@ describe('VM Process Controller', () => {
       
       expect(result).toHaveProperty('vmId', 'vm-test-1');
       expect(result).toHaveProperty('success', true);
+      expect(controller.getVmRuntimeStatus('vm-test-1')).toBe('paused');
     });
 
     it('connects to QMP socket', async () => {
@@ -240,6 +365,7 @@ describe('VM Process Controller', () => {
       
       expect(result).toHaveProperty('vmId', 'vm-test-1');
       expect(result).toHaveProperty('success', true);
+      expect(controller.getVmRuntimeStatus('vm-test-1')).toBe('running');
     });
 
     it('connects to QMP socket', async () => {
@@ -364,12 +490,28 @@ describe('VM Process Controller', () => {
   });
 
   describe('Display Session Lifecycle', () => {
+    it('throws when spice display is unsupported', async () => {
+      controller.setDetectQemuFn((async () => ({
+        path: '/opt/homebrew/bin/qemu-system-aarch64',
+        version: 'QEMU emulator version 10.2.0',
+        accelerators: ['tcg'],
+        spiceSupported: false,
+      })) as any);
+      await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
+      await expect(controller.openDisplaySession('vm-test-1')).rejects.toThrow('SPICE display unavailable');
+    });
+
+    it('throws when opening display for non-running vm', async () => {
+      await expect(controller.openDisplaySession('missing-vm')).rejects.toThrow('not running');
+    });
+
     it('opens display session for running VM', async () => {
       await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
       const session = await controller.openDisplaySession('vm-test-1');
       expect(session.vmId).toBe('vm-test-1');
       expect(session.uri).toContain('spice://127.0.0.1:');
       expect(session.status).toBe(DisplaySessionStatus.Connected);
+      expect(session.connectedAt).toBeTruthy();
     });
 
     it('returns existing session when already connected', async () => {

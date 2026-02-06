@@ -73,6 +73,9 @@ export interface VMConfig {
   memory: number; // in MB
   disks: Disk[];
   network: NetworkConfig;
+  installMediaPath?: string;
+  bootOrder: 'disk-first' | 'cdrom-first';
+  networkType: 'nat' | 'bridge';
 }
 
 /**
@@ -94,9 +97,11 @@ export interface DisplaySession {
   host: string;
   port: number;
   uri: string;
+  websocketUri?: string;
   status: DisplaySessionStatus;
   reconnectAttempts: number;
   lastError?: string;
+  connectedAt?: string;
 }
 
 /**

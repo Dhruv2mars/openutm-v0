@@ -16,6 +16,9 @@ pub struct VMRecord {
     pub cpu_cores: u32,
     pub disk_size_gb: u32,
     pub os: String,
+    pub install_media_path: Option<String>,
+    pub boot_order: String,
+    pub network_type: String,
 }
 
 impl ConfigStore {
@@ -87,15 +90,67 @@ impl ConfigStore {
             [],
         )?;
 
+        self.ensure_column(
+            &conn,
+            "vms",
+            "install_media_path",
+            "install_media_path TEXT",
+        )?;
+        self.ensure_column(
+            &conn,
+            "vms",
+            "boot_order",
+            "boot_order TEXT DEFAULT 'disk-first'",
+        )?;
+        self.ensure_column(
+            &conn,
+            "vms",
+            "network_type",
+            "network_type TEXT DEFAULT 'nat'",
+        )?;
+
+        conn.execute(
+            "UPDATE vms SET boot_order = 'disk-first' WHERE boot_order IS NULL OR boot_order = ''",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE vms SET network_type = 'nat' WHERE network_type IS NULL OR network_type = ''",
+            [],
+        )?;
+
+        Ok(())
+    }
+
+    fn ensure_column(&self, conn: &Connection, table: &str, column: &str, ddl: &str) -> Result<()> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if !columns.iter().any(|name| name == column) {
+            conn.execute(&format!("ALTER TABLE {} ADD COLUMN {}", table, ddl), [])?;
+        }
+
         Ok(())
     }
 
     pub fn create_vm(&self, vm: &VMRecord) -> Result<()> {
         let conn = Connection::open(&self.db_path)?;
         conn.execute(
-            "INSERT INTO vms (id, name, status, memory_mb, cpu_cores, disk_size_gb, os) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-            params![&vm.id, &vm.name, &vm.status, vm.memory_mb, vm.cpu_cores, vm.disk_size_gb, &vm.os],
+            "INSERT INTO vms (id, name, status, memory_mb, cpu_cores, disk_size_gb, os, install_media_path, boot_order, network_type) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                &vm.id,
+                &vm.name,
+                &vm.status,
+                vm.memory_mb,
+                vm.cpu_cores,
+                vm.disk_size_gb,
+                &vm.os,
+                &vm.install_media_path,
+                &vm.boot_order,
+                &vm.network_type
+            ],
         )?;
         Ok(())
     }
@@ -103,7 +158,10 @@ impl ConfigStore {
     pub fn get_vm(&self, id: &str) -> Result<Option<VMRecord>> {
         let conn = Connection::open(&self.db_path)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, status, memory_mb, cpu_cores, disk_size_gb, os FROM vms WHERE id = ?"
+            "SELECT id, name, status, memory_mb, cpu_cores, disk_size_gb, os, install_media_path,
+                    COALESCE(NULLIF(boot_order, ''), 'disk-first'),
+                    COALESCE(NULLIF(network_type, ''), 'nat')
+             FROM vms WHERE id = ?"
         )?;
         
         let result = stmt.query_row([id], |row| {
@@ -115,6 +173,9 @@ impl ConfigStore {
                 cpu_cores: row.get(4)?,
                 disk_size_gb: row.get(5)?,
                 os: row.get(6)?,
+                install_media_path: row.get(7)?,
+                boot_order: row.get(8)?,
+                network_type: row.get(9)?,
             })
         }).ok();
         
@@ -124,7 +185,10 @@ impl ConfigStore {
     pub fn list_vms(&self) -> Result<Vec<VMRecord>> {
         let conn = Connection::open(&self.db_path)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, status, memory_mb, cpu_cores, disk_size_gb, os FROM vms ORDER BY created_at DESC"
+            "SELECT id, name, status, memory_mb, cpu_cores, disk_size_gb, os, install_media_path,
+                    COALESCE(NULLIF(boot_order, ''), 'disk-first'),
+                    COALESCE(NULLIF(network_type, ''), 'nat')
+             FROM vms ORDER BY created_at DESC"
         )?;
         
         let vms = stmt.query_map([], |row| {
@@ -136,6 +200,9 @@ impl ConfigStore {
                 cpu_cores: row.get(4)?,
                 disk_size_gb: row.get(5)?,
                 os: row.get(6)?,
+                install_media_path: row.get(7)?,
+                boot_order: row.get(8)?,
+                network_type: row.get(9)?,
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -146,9 +213,20 @@ impl ConfigStore {
     pub fn update_vm(&self, vm: &VMRecord) -> Result<()> {
         let conn = Connection::open(&self.db_path)?;
         let rows = conn.execute(
-            "UPDATE vms SET name = ?, status = ?, memory_mb = ?, cpu_cores = ?, disk_size_gb = ?, os = ?, updated_at = CURRENT_TIMESTAMP 
+            "UPDATE vms SET name = ?, status = ?, memory_mb = ?, cpu_cores = ?, disk_size_gb = ?, os = ?, install_media_path = ?, boot_order = ?, network_type = ?, updated_at = CURRENT_TIMESTAMP 
              WHERE id = ?",
-            params![&vm.name, &vm.status, vm.memory_mb, vm.cpu_cores, vm.disk_size_gb, &vm.os, &vm.id],
+            params![
+                &vm.name,
+                &vm.status,
+                vm.memory_mb,
+                vm.cpu_cores,
+                vm.disk_size_gb,
+                &vm.os,
+                &vm.install_media_path,
+                &vm.boot_order,
+                &vm.network_type,
+                &vm.id
+            ],
         )?;
         
         if rows == 0 {
@@ -203,6 +281,9 @@ mod tests {
             cpu_cores: 2,
             disk_size_gb: 50,
             os: "linux".to_string(),
+            install_media_path: None,
+            boot_order: "disk-first".to_string(),
+            network_type: "nat".to_string(),
         }
     }
 
@@ -345,9 +426,52 @@ mod tests {
             cpu_cores: 2,
             disk_size_gb: 50,
             os: "linux".to_string(),
+            install_media_path: None,
+            boot_order: "disk-first".to_string(),
+            network_type: "nat".to_string(),
         };
         
         let result = store.create_vm(&vm);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_migrates_legacy_vms_schema_with_defaults() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let db_path = temp_dir.path().join("legacy.db");
+
+        let conn = Connection::open(&db_path).expect("Failed to open sqlite db");
+        conn.execute(
+            "CREATE TABLE vms (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                memory_mb INTEGER NOT NULL,
+                cpu_cores INTEGER NOT NULL,
+                disk_size_gb INTEGER NOT NULL,
+                os TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )
+        .expect("Failed to create legacy schema");
+        conn.execute(
+            "INSERT INTO vms (id, name, status, memory_mb, cpu_cores, disk_size_gb, os)
+             VALUES ('legacy-vm', 'Legacy VM', 'stopped', 2048, 2, 20, 'linux')",
+            [],
+        )
+        .expect("Failed to seed legacy row");
+        drop(conn);
+
+        let store = ConfigStore::new(db_path).expect("Failed to init store");
+        let vm = store
+            .get_vm("legacy-vm")
+            .expect("Failed to fetch vm")
+            .expect("VM missing");
+
+        assert_eq!(vm.install_media_path, None);
+        assert_eq!(vm.boot_order, "disk-first");
+        assert_eq!(vm.network_type, "nat");
     }
 }

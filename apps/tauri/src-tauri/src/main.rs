@@ -23,6 +23,7 @@ pub struct DisplaySession {
     pub status: String,
     pub reconnect_attempts: u32,
     pub last_error: Option<String>,
+    pub connected_at: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
@@ -40,6 +41,20 @@ pub struct VMConfig {
     pub cpu_cores: u32,
     pub disk_size_gb: u32,
     pub os: String,
+    #[serde(default)]
+    pub install_media_path: Option<String>,
+    #[serde(default = "default_boot_order")]
+    pub boot_order: String,
+    #[serde(default = "default_network_type")]
+    pub network_type: String,
+}
+
+fn default_boot_order() -> String {
+    "disk-first".to_string()
+}
+
+fn default_network_type() -> String {
+    "nat".to_string()
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
@@ -94,6 +109,10 @@ fn main() {
             commands::detect_qemu,
             commands::create_vm,
             commands::update_vm,
+            commands::pick_install_media,
+            commands::set_install_media,
+            commands::eject_install_media,
+            commands::set_boot_order,
             commands::start_vm,
             commands::stop_vm,
             commands::pause_vm,

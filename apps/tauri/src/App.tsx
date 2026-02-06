@@ -23,7 +23,11 @@ import {
   openDisplayViaBackend,
   getDisplayViaBackend,
   closeDisplayViaBackend,
+  ejectInstallMediaViaBackend,
   resumeVmViaBackend,
+  pickInstallMediaViaBackend,
+  setBootOrderViaBackend,
+  setInstallMediaViaBackend,
   startVmViaBackend,
   stopVmViaBackend,
   updateVmViaBackend,
@@ -98,7 +102,8 @@ function App() {
         minimumVersionMet: false,
       });
       setAppState('qemu-setup');
-      addToast('error', error instanceof Error ? error.message : 'Failed to detect QEMU installation');
+      const message = error instanceof Error ? error.message : String(error);
+      addToast('error', message || 'Failed to detect QEMU installation');
     }
   }, [addToast, refreshVms]);
 
@@ -256,6 +261,55 @@ function App() {
     [addToast, syncDisplaySession]
   );
 
+  const handlePickInstallMedia = useCallback(async () => {
+    return pickInstallMediaViaBackend();
+  }, []);
+
+  const handlePickInstallMediaForVm = useCallback(
+    async (vmId: string) => {
+      try {
+        const path = await pickInstallMediaViaBackend(vmId);
+        if (!path) {
+          return;
+        }
+        await setInstallMediaViaBackend(vmId, path);
+        await setBootOrderViaBackend(vmId, 'cdrom-first');
+        await refreshVms();
+        addToast('success', 'Install media attached');
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to attach install media');
+      }
+    },
+    [addToast, refreshVms]
+  );
+
+  const handleEjectInstallMedia = useCallback(
+    async (vmId: string) => {
+      try {
+        await ejectInstallMediaViaBackend(vmId);
+        await setBootOrderViaBackend(vmId, 'disk-first');
+        await refreshVms();
+        addToast('info', 'Install media ejected');
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to eject install media');
+      }
+    },
+    [addToast, refreshVms]
+  );
+
+  const handleSetBootOrder = useCallback(
+    async (vmId: string, order: 'disk-first' | 'cdrom-first') => {
+      try {
+        await setBootOrderViaBackend(vmId, order);
+        await refreshVms();
+        addToast('info', `Boot order set: ${order}`);
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to set boot order');
+      }
+    },
+    [addToast, refreshVms]
+  );
+
   useEffect(() => {
     if (!selectedId) {
       return;
@@ -293,6 +347,8 @@ function App() {
           cpu: wizardConfig.cpu,
           memory: wizardConfig.ram,
           diskSizeGb: wizardConfig.disk,
+          installMediaPath: wizardConfig.installMediaPath || undefined,
+          bootOrder: wizardConfig.installMediaPath ? 'cdrom-first' : 'disk-first',
           networkType: wizardConfig.network === 'user' ? 'nat' : 'bridge',
           os: wizardConfig.os,
         });
@@ -374,11 +430,18 @@ function App() {
       onThemeToggle={() => setIsDarkMode(!isDarkMode)}
     >
       {showWizard ? (
-        <VMWizard onComplete={handleWizardComplete} onCancel={() => setShowWizard(false)} />
+        <VMWizard
+          onComplete={handleWizardComplete}
+          onCancel={() => setShowWizard(false)}
+          onPickInstallMedia={() => handlePickInstallMedia()}
+        />
       ) : selectedVm ? (
         <VMDetailView
           vm={selectedVm}
           displaySession={selectedDisplay}
+          onPickInstallMedia={(id) => void handlePickInstallMediaForVm(id)}
+          onEjectInstallMedia={(id) => void handleEjectInstallMedia(id)}
+          onSetBootOrder={(id, order) => void handleSetBootOrder(id, order)}
           onOpenDisplay={(id) => void handleOpenDisplay(id)}
           onCloseDisplay={(id) => void handleCloseDisplay(id)}
           onUpdateConfig={handleUpdateConfig}

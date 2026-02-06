@@ -17,6 +17,8 @@
     "typecheck": "bun run --cwd packages/shared-types build && bun run --cwd packages/ui build && turbo run typecheck",
     "coverage": "bun run --cwd packages/shared-types test:coverage && bun run --cwd packages/qemu-lib test:coverage && bun run --cwd packages/vm-core test:coverage && bun run --cwd packages/ui test:coverage",
     "verify:release": "bun run lint && bun run typecheck && bun run test && bun run test:native && bun run coverage && bun run build",
+    "verify:electron-release": "bun run --cwd apps/electron verify:release",
+    "verify:electron-workflow": "bun run --cwd apps/electron verify:workflow",
     "install:macos-apps": "bash scripts/install-macos-apps.sh"
   },
   "devDependencies": {

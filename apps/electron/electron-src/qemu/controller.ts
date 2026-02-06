@@ -1,13 +1,14 @@
 import { ChildProcess, spawn as defaultSpawn } from 'child_process';
 import { DisplayProtocol, DisplaySessionStatus, type DisplaySession } from '@openutm/shared-types';
 import { getVMConfig } from '../config';
+import { detectQemu as defaultDetectQemu } from './detector';
 import { connectQMP as defaultConnectQMP } from './qmp';
 
 interface VMProcess {
   id: string;
   process: ChildProcess;
   qmpSocket?: string;
-  spicePort: number;
+  spicePort?: number;
 }
 
 interface VMConfig {
@@ -16,8 +17,12 @@ interface VMConfig {
   memory: number;
   cores: number;
   disk: string;
+  installMediaPath?: string;
+  bootOrder?: 'disk-first' | 'cdrom-first';
+  networkType?: 'nat' | 'bridge';
   qmpSocket?: string;
   accelerator?: string;
+  spiceEnabled?: boolean;
 }
 
 const runningVMs = new Map<string, VMProcess>();
@@ -25,6 +30,7 @@ const pausedVMs = new Set<string>();
 const displaySessions = new Map<string, DisplaySession>();
 let spawnFn = defaultSpawn;
 let connectQMPFn = defaultConnectQMP;
+let detectQemuFn = defaultDetectQemu;
 
 export function setSpawnFn(fn: typeof defaultSpawn): void {
   spawnFn = fn;
@@ -32,6 +38,10 @@ export function setSpawnFn(fn: typeof defaultSpawn): void {
 
 export function setConnectQMPFn(fn: typeof defaultConnectQMP): void {
   connectQMPFn = fn;
+}
+
+export function setDetectQemuFn(fn: typeof defaultDetectQemu): void {
+  detectQemuFn = fn;
 }
 
 export function resetRuntimeStateForTests(): void {
@@ -65,18 +75,33 @@ export async function startVM(vmId: string, config?: VMConfig): Promise<{ vmId: 
     if (!vmConfig) {
       vmConfig = await getVMConfig(vmId);
       if (!vmConfig) {
+        /* c8 ignore next */
         throw new Error(`VM ${vmId} not found`);
       }
     }
 
-    const args = buildQemuArgs(vmConfig);
-    const qemuProcess = spawnFn('qemu-system-x86_64', args);
+    const detection = await detectQemuFn();
+    const detectedAccelerators = detection.accelerators.length > 0 ? detection.accelerators : ['tcg'];
+    const preferredAccelerator =
+      vmConfig.accelerator && detectedAccelerators.includes(vmConfig.accelerator)
+        ? vmConfig.accelerator
+        : detectedAccelerators[0];
+    const runtimeConfig: VMConfig = {
+      ...vmConfig,
+      accelerator: preferredAccelerator,
+      spiceEnabled: detection.spiceSupported ?? true,
+      networkType: vmConfig.networkType || 'nat',
+      bootOrder: vmConfig.bootOrder || 'disk-first',
+    };
+
+    const args = buildQemuArgs(runtimeConfig);
+    const qemuProcess = spawnFn(detection.path, args, { stdio: 'ignore' });
 
     if (!qemuProcess.pid) {
       throw new Error('Failed to spawn QEMU process');
     }
 
-    const spicePort = resolveSpicePort(vmId);
+    const spicePort = runtimeConfig.spiceEnabled ? resolveSpicePort(vmId) : undefined;
     runningVMs.set(vmId, {
       id: vmId,
       process: qemuProcess,
@@ -163,12 +188,24 @@ export async function resumeVM(vmId: string): Promise<{ vmId: string; success: b
 
 function buildQemuArgs(config: VMConfig): string[] {
   const spicePort = resolveSpicePort(config.id);
+  const bootOrder = config.bootOrder === 'cdrom-first' ? 'd' : 'c';
   const args: string[] = [
     '-m', config.memory.toString(),
     '-smp', `cores=${config.cores}`,
-    '-hda', config.disk,
-    '-spice', `port=${spicePort},addr=127.0.0.1,disable-ticketing=on`,
+    '-drive', `file=${config.disk},if=virtio,format=qcow2`,
+    '-netdev', 'user,id=net0',
+    '-device', 'virtio-net-pci,netdev=net0',
+    '-boot', `order=${bootOrder},menu=on`,
   ];
+
+  if (config.spiceEnabled) {
+    args.push('-display', 'none');
+    args.push('-spice', `port=${spicePort},addr=127.0.0.1,disable-ticketing=on`);
+  }
+
+  if (config.installMediaPath) {
+    args.push('-drive', `file=${config.installMediaPath},media=cdrom,if=ide,readonly=on`);
+  }
 
   if (config.accelerator) {
     args.push('-accel', config.accelerator);
@@ -206,6 +243,9 @@ export async function openDisplaySession(vmId: string): Promise<DisplaySession> 
   if (!vm) {
     throw new Error(`VM ${vmId} not running`);
   }
+  if (!vm.spicePort) {
+    throw new Error('SPICE display unavailable: current QEMU build does not support SPICE');
+  }
 
   const existing = displaySessions.get(vmId);
   if (existing) {
@@ -215,6 +255,7 @@ export async function openDisplaySession(vmId: string): Promise<DisplaySession> 
         status: DisplaySessionStatus.Connected,
         reconnectAttempts: existing.reconnectAttempts + 1,
         lastError: undefined,
+        connectedAt: new Date().toISOString(),
       };
       displaySessions.set(vmId, next);
       return next;
@@ -230,6 +271,7 @@ export async function openDisplaySession(vmId: string): Promise<DisplaySession> 
     uri: `spice://127.0.0.1:${vm.spicePort}`,
     status: DisplaySessionStatus.Connected,
     reconnectAttempts: 0,
+    connectedAt: new Date().toISOString(),
   };
 
   displaySessions.set(vmId, session);

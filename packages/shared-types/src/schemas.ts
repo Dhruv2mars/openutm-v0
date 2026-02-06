@@ -53,6 +53,9 @@ export const VMConfigSchema = z.object({
   memory: z.number().int().positive('Memory must be positive'),
   disks: z.array(DiskSchema).min(1, 'At least one disk is required'),
   network: NetworkConfigSchema,
+  installMediaPath: z.string().min(1).optional(),
+  bootOrder: z.enum(['disk-first', 'cdrom-first']).default('disk-first'),
+  networkType: z.enum(['nat', 'bridge']).default('nat'),
 });
 
 export const VMSchema = z.object({
@@ -68,9 +71,11 @@ export const DisplaySessionSchema = z.object({
   host: z.string().min(1, 'Display host cannot be empty'),
   port: z.number().int().positive('Display port must be positive').max(65535, 'Display port out of range'),
   uri: z.string().min(1, 'Display URI cannot be empty'),
+  websocketUri: z.string().url().optional(),
   status: DisplaySessionStatusSchema,
   reconnectAttempts: z.number().int().nonnegative('Reconnect attempts cannot be negative'),
   lastError: z.string().min(1).optional(),
+  connectedAt: z.string().datetime().optional(),
 });
 
 export const SystemInfoSchema = z.object({

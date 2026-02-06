@@ -9,6 +9,8 @@ export interface CreateVmRequest {
   cpu: number;
   memory: number;
   diskSizeGb: number;
+  installMediaPath?: string;
+  bootOrder: "disk-first" | "cdrom-first";
   networkType: "nat" | "bridge";
   os: "linux" | "windows" | "macos" | "other";
 }
@@ -33,6 +35,9 @@ interface RawVmConfig {
   cpu_cores: number;
   disk_size_gb: number;
   os: string;
+  install_media_path?: string | null;
+  boot_order?: string;
+  network_type?: string;
 }
 
 interface RawVm {
@@ -51,14 +56,40 @@ interface RawDisplaySession {
   status: string;
   reconnectAttempts: number;
   lastError?: string | null;
+  connectedAt?: string | null;
 }
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
 let invokeOverride: InvokeFn | null = null;
+let globalInvokeOverride: InvokeFn | null = null;
 
 export function __setInvokeForTests(invoke: InvokeFn | null): void {
   invokeOverride = invoke;
+}
+
+export function __setGlobalInvokeForTests(invoke: InvokeFn | null): void {
+  globalInvokeOverride = invoke;
+}
+
+interface TauriInternalsWindow extends Window {
+  __TAURI_INTERNALS__?: {
+    invoke?: InvokeFn;
+  };
+}
+
+function resolveGlobalInvoke(): InvokeFn | null {
+  if (globalInvokeOverride) {
+    return globalInvokeOverride;
+  }
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const w = window as TauriInternalsWindow;
+  if (typeof w.__TAURI_INTERNALS__?.invoke === "function") {
+    return w.__TAURI_INTERNALS__.invoke as InvokeFn;
+  }
+  return null;
 }
 
 async function getInvoke(): Promise<InvokeFn> {
@@ -66,16 +97,12 @@ async function getInvoke(): Promise<InvokeFn> {
     return invokeOverride;
   }
 
-  if (typeof window === "undefined") {
-    throw new Error("Tauri invoke bridge unavailable");
+  const globalInvoke = resolveGlobalInvoke();
+  if (globalInvoke) {
+    return globalInvoke;
   }
 
-  const module = await import("@tauri-apps/api/core");
-  if (!module.invoke) {
-    throw new Error("Tauri invoke bridge unavailable");
-  }
-
-  return module.invoke as InvokeFn;
+  throw new Error("Tauri invoke bridge unavailable");
 }
 
 function parseMajor(version: string | null): number | null {
@@ -94,6 +121,7 @@ function normalizeStatus(status: string): VMStatus {
 }
 
 function mapRawVm(raw: RawVm): VM {
+  const networkType = raw.config.network_type === "bridge" ? "bridge" : "nat";
   return {
     id: raw.id,
     name: raw.name,
@@ -108,14 +136,51 @@ function mapRawVm(raw: RawVm): VM {
           format: "qcow2",
         },
       ],
-      network: { type: "nat" },
+      network: { type: networkType },
+      installMediaPath: raw.config.install_media_path || undefined,
+      bootOrder: raw.config.boot_order === "cdrom-first" ? "cdrom-first" : "disk-first",
+      networkType,
     },
   };
 }
 
-export async function detectQemuViaBackend(): Promise<QemuDetectionResult> {
+function stringifyError(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.message && error.message !== "[object Object]") {
+      return error.message;
+    }
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error && typeof error === "object") {
+    const maybeMessage = (error as Record<string, unknown>).message;
+    if (typeof maybeMessage === "string" && maybeMessage.length > 0) {
+      return maybeMessage;
+    }
+    const maybeError = (error as Record<string, unknown>).error;
+    if (typeof maybeError === "string" && maybeError.length > 0) {
+      return maybeError;
+    }
+    return JSON.stringify(error);
+  }
+
+  return String(error);
+}
+
+async function invokeOrThrow<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const invoke = await getInvoke();
-  const result = await invoke<RawQemuInfo>("detect_qemu");
+  try {
+    return await invoke<T>(cmd, args);
+  } catch (error) {
+    throw new Error(stringifyError(error));
+  }
+}
+
+export async function detectQemuViaBackend(): Promise<QemuDetectionResult> {
+  const result = await invokeOrThrow<RawQemuInfo>("detect_qemu");
   const version = result.version || null;
   const major = parseMajor(version);
   const accelerators = result.accelerator ? [result.accelerator.toLowerCase()] : [];
@@ -129,72 +194,66 @@ export async function detectQemuViaBackend(): Promise<QemuDetectionResult> {
 }
 
 export async function listVmsViaBackend(): Promise<VM[]> {
-  const invoke = await getInvoke();
-  const result = await invoke<RawVm[]>("list_vms");
+  const result = await invokeOrThrow<RawVm[]>("list_vms");
   return result.map(mapRawVm);
 }
 
 export async function createVmViaBackend(request: CreateVmRequest): Promise<VM> {
-  const invoke = await getInvoke();
-  const raw = await invoke<RawVm>("create_vm", {
+  const raw = await invokeOrThrow<RawVm>("create_vm", {
     config: {
       name: request.name,
       memory_mb: request.memory,
       cpu_cores: request.cpu,
       disk_size_gb: request.diskSizeGb,
       os: request.os,
+      install_media_path: request.installMediaPath || null,
+      boot_order: request.bootOrder,
+      network_type: request.networkType,
     },
   });
   return mapRawVm(raw);
 }
 
 export async function updateVmViaBackend(request: UpdateVmRequest): Promise<VM> {
-  const invoke = await getInvoke();
-  const raw = await invoke<RawVm>("update_vm", { request });
+  const raw = await invokeOrThrow<RawVm>("update_vm", { request });
   return mapRawVm(raw);
 }
 
 export async function deleteVmViaBackend(id: string): Promise<void> {
-  const invoke = await getInvoke();
-  await invoke<void>("delete_vm", { id });
+  await invokeOrThrow<void>("delete_vm", { id });
 }
 
 export async function startVmViaBackend(id: string): Promise<void> {
-  const invoke = await getInvoke();
-  await invoke<void>("start_vm", { id });
+  await invokeOrThrow<void>("start_vm", { id });
 }
 
 export async function stopVmViaBackend(id: string): Promise<void> {
-  const invoke = await getInvoke();
-  await invoke<void>("stop_vm", { id });
+  await invokeOrThrow<void>("stop_vm", { id });
 }
 
 export async function pauseVmViaBackend(id: string): Promise<void> {
-  const invoke = await getInvoke();
-  await invoke<void>("pause_vm", { id });
+  await invokeOrThrow<void>("pause_vm", { id });
 }
 
 export async function resumeVmViaBackend(id: string): Promise<void> {
-  const invoke = await getInvoke();
-  await invoke<void>("resume_vm", { id });
+  await invokeOrThrow<void>("resume_vm", { id });
 }
 
 function normalizeDisplaySession(raw: RawDisplaySession): DisplaySession {
   return DisplaySessionSchema.parse({
     ...raw,
     lastError: raw.lastError || undefined,
+    connectedAt: raw.connectedAt || undefined,
   });
 }
 
 export async function openDisplayViaBackend(id: string): Promise<DisplaySession> {
-  const invoke = await getInvoke();
-  const raw = await invoke<RawDisplaySession>("open_display", { id });
+  const raw = await invokeOrThrow<RawDisplaySession>("open_display", { id });
   return normalizeDisplaySession(raw);
 }
 
 export async function getDisplayViaBackend(id: string): Promise<DisplaySession | null> {
-  const invoke = await getInvoke();
-  const raw = await invoke<RawDisplaySession | null>("get_display", { id });
+  const raw = await invokeOrThrow<RawDisplaySession | null>("get_display", { id });
   if (!raw) {
     return null;
   }
@@ -202,6 +261,22 @@ export async function getDisplayViaBackend(id: string): Promise<DisplaySession |
 }
 
 export async function closeDisplayViaBackend(id: string): Promise<void> {
-  const invoke = await getInvoke();
-  await invoke<void>("close_display", { id });
+  await invokeOrThrow<void>("close_display", { id });
+}
+
+export async function pickInstallMediaViaBackend(id?: string): Promise<string | null> {
+  const result = await invokeOrThrow<string | null>("pick_install_media", { id });
+  return result || null;
+}
+
+export async function setInstallMediaViaBackend(id: string, path: string): Promise<void> {
+  await invokeOrThrow<void>("set_install_media", { id, path });
+}
+
+export async function ejectInstallMediaViaBackend(id: string): Promise<void> {
+  await invokeOrThrow<void>("eject_install_media", { id });
+}
+
+export async function setBootOrderViaBackend(id: string, order: "disk-first" | "cdrom-first"): Promise<void> {
+  await invokeOrThrow<void>("set_boot_order", { id, order });
 }

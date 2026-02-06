@@ -18,16 +18,23 @@ import {
   createVmViaBackend,
   deleteVmViaBackend,
   detectQemuViaBackend,
+  getQemuInstallCommandViaBackend,
   listVmsViaBackend,
+  openQemuInstallTerminalViaBackend,
   pauseVmViaBackend,
   openDisplayViaBackend,
   getDisplayViaBackend,
   closeDisplayViaBackend,
+  ejectInstallMediaViaBackend,
   resumeVmViaBackend,
+  pickInstallMediaViaBackend,
+  setBootOrderViaBackend,
+  setInstallMediaViaBackend,
   startVmViaBackend,
   stopVmViaBackend,
   updateVmViaBackend,
 } from './backend';
+import { SpiceViewer } from './spice-viewer';
 import './index.css';
 
 const vmStatusToListStatus = (status: VMStatus): VMListItem['status'] => {
@@ -43,9 +50,9 @@ const vmStatusToListStatus = (status: VMStatus): VMListItem['status'] => {
 type AppState = 'loading' | 'qemu-setup' | 'ready';
 
 const DEFAULT_INSTALL_SUGGESTION = `macOS: Install QEMU using Homebrew:
-  brew install qemu
+  brew update && brew install qemu
 
-Alternatively, download from: https://www.qemu.org/download/#macos`;
+Alternative manual docs: https://www.qemu.org/download/#macos`;
 
 function inferOs(vm: VM): VMListItem['os'] {
   const value = vm.name.toLowerCase();
@@ -65,6 +72,7 @@ function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [displaySessions, setDisplaySessions] = useState<Record<string, DisplaySession | null>>({});
+  const [installSuggestion, setInstallSuggestion] = useState(DEFAULT_INSTALL_SUGGESTION);
   const { addToast } = useToast();
 
   const refreshVms = useCallback(async () => {
@@ -98,13 +106,27 @@ function App() {
         minimumVersionMet: false,
       });
       setAppState('qemu-setup');
-      addToast('error', error instanceof Error ? error.message : 'Failed to detect QEMU installation');
+      const message = error instanceof Error ? error.message : String(error);
+      addToast('error', message || 'Failed to detect QEMU installation');
     }
   }, [addToast, refreshVms]);
+
+  const loadInstallSuggestion = useCallback(async () => {
+    try {
+      const command = await getQemuInstallCommandViaBackend();
+      setInstallSuggestion(`macOS: Install QEMU using Homebrew:\n  ${command}`);
+    } catch {
+      setInstallSuggestion(DEFAULT_INSTALL_SUGGESTION);
+    }
+  }, []);
 
   useEffect(() => {
     void checkQemu();
   }, [checkQemu]);
+
+  useEffect(() => {
+    void loadInstallSuggestion();
+  }, [loadInstallSuggestion]);
 
   const selectedVm = vms.find((vm) => vm.id === selectedId);
   const selectedDisplay = selectedId ? (displaySessions[selectedId] || null) : null;
@@ -256,6 +278,60 @@ function App() {
     [addToast, syncDisplaySession]
   );
 
+  const handlePickInstallMedia = useCallback(async () => {
+    return pickInstallMediaViaBackend();
+  }, []);
+
+  const handlePickInstallMediaForVm = useCallback(
+    async (vmId: string) => {
+      try {
+        const path = await pickInstallMediaViaBackend(vmId);
+        if (!path) {
+          return;
+        }
+        await setInstallMediaViaBackend(vmId, path);
+        await setBootOrderViaBackend(vmId, 'cdrom-first');
+        await refreshVms();
+        addToast('success', 'Install media attached');
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to attach install media');
+      }
+    },
+    [addToast, refreshVms]
+  );
+
+  const handleEjectInstallMedia = useCallback(
+    async (vmId: string) => {
+      try {
+        await ejectInstallMediaViaBackend(vmId);
+        await setBootOrderViaBackend(vmId, 'disk-first');
+        await refreshVms();
+        addToast('info', 'Install media ejected');
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to eject install media');
+      }
+    },
+    [addToast, refreshVms]
+  );
+
+  const handleSetBootOrder = useCallback(
+    async (vmId: string, order: 'disk-first' | 'cdrom-first') => {
+      try {
+        await setBootOrderViaBackend(vmId, order);
+        await refreshVms();
+        addToast('info', `Boot order set: ${order}`);
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to set boot order');
+      }
+    },
+    [addToast, refreshVms]
+  );
+
+  const handleInstallViaHomebrew = useCallback(async () => {
+    await openQemuInstallTerminalViaBackend();
+    addToast('info', 'Opened Terminal with QEMU install command');
+  }, [addToast]);
+
   useEffect(() => {
     if (!selectedId) {
       return;
@@ -293,6 +369,8 @@ function App() {
           cpu: wizardConfig.cpu,
           memory: wizardConfig.ram,
           diskSizeGb: wizardConfig.disk,
+          installMediaPath: wizardConfig.installMediaPath || undefined,
+          bootOrder: wizardConfig.installMediaPath ? 'cdrom-first' : 'disk-first',
           networkType: wizardConfig.network === 'user' ? 'nat' : 'bridge',
           os: wizardConfig.os,
         });
@@ -324,7 +402,8 @@ function App() {
       <div className={`min-h-screen bg-gray-100 dark:bg-gray-900 ${isDarkMode ? 'dark' : ''}`}>
         <QemuSetupWizard
           detectionResult={qemuResult}
-          installSuggestion={DEFAULT_INSTALL_SUGGESTION}
+          installSuggestion={installSuggestion}
+          onInstallViaHomebrew={handleInstallViaHomebrew}
           onRetry={() => void checkQemu()}
           onSkip={() => {
             setAppState('ready');
@@ -374,11 +453,19 @@ function App() {
       onThemeToggle={() => setIsDarkMode(!isDarkMode)}
     >
       {showWizard ? (
-        <VMWizard onComplete={handleWizardComplete} onCancel={() => setShowWizard(false)} />
+        <VMWizard
+          onComplete={handleWizardComplete}
+          onCancel={() => setShowWizard(false)}
+          onPickInstallMedia={() => handlePickInstallMedia()}
+        />
       ) : selectedVm ? (
         <VMDetailView
           vm={selectedVm}
           displaySession={selectedDisplay}
+          displayBody={<SpiceViewer session={selectedDisplay} />}
+          onPickInstallMedia={(id) => void handlePickInstallMediaForVm(id)}
+          onEjectInstallMedia={(id) => void handleEjectInstallMedia(id)}
+          onSetBootOrder={(id, order) => void handleSetBootOrder(id, order)}
           onOpenDisplay={(id) => void handleOpenDisplay(id)}
           onCloseDisplay={(id) => void handleCloseDisplay(id)}
           onUpdateConfig={handleUpdateConfig}

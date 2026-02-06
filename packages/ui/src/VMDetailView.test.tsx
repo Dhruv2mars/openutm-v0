@@ -13,7 +13,10 @@ const mockVM: VM = {
     disks: [
       { path: '/tmp/disk.qcow2', size: 1024 * 1024 * 1024 * 20, format: 'qcow2' }
     ],
-    network: { type: 'nat' }
+    network: { type: 'nat' },
+    installMediaPath: null,
+    bootOrder: 'disk-first',
+    networkType: 'nat',
   }
 };
 
@@ -178,6 +181,58 @@ describe('VMDetailView', () => {
     expect(screen.getByText('Type: nat')).toBeInTheDocument();
   });
 
+  it('handles install media actions from drives tab', () => {
+    const onPickInstallMedia = vi.fn();
+    const onEjectInstallMedia = vi.fn();
+    const onSetBootOrder = vi.fn();
+    render(
+      <VMDetailView
+        vm={{
+          ...mockVM,
+          config: {
+            ...mockVM.config,
+            installMediaPath: '/isos/ubuntu.iso',
+          },
+        }}
+        onPickInstallMedia={onPickInstallMedia}
+        onEjectInstallMedia={onEjectInstallMedia}
+        onSetBootOrder={onSetBootOrder}
+        onUpdateConfig={vi.fn()}
+        onAction={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Drives'));
+    fireEvent.click(screen.getByRole('button', { name: 'Pick ISO' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Eject ISO' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Boot Disk First' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Boot ISO First' }));
+
+    expect(onPickInstallMedia).toHaveBeenCalledWith(mockVM.id);
+    expect(onEjectInstallMedia).toHaveBeenCalledWith(mockVM.id);
+    expect(onSetBootOrder).toHaveBeenCalledWith(mockVM.id, 'disk-first');
+    expect(onSetBootOrder).toHaveBeenCalledWith(mockVM.id, 'cdrom-first');
+  });
+
+  it('disables iso actions when install media is missing', () => {
+    render(
+      <VMDetailView
+        vm={mockVM}
+        onPickInstallMedia={vi.fn()}
+        onEjectInstallMedia={vi.fn()}
+        onSetBootOrder={vi.fn()}
+        onUpdateConfig={vi.fn()}
+        onAction={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Drives'));
+    expect(screen.getByRole('button', { name: 'Eject ISO' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Boot ISO First' })).toBeDisabled();
+  });
+
   it('cancels delete confirmation modal', () => {
     const onDelete = vi.fn();
     render(
@@ -233,6 +288,23 @@ describe('VMDetailView', () => {
 
     fireEvent.click(screen.getByText('Display'));
     expect(screen.getByText('No active display session.')).toBeInTheDocument();
+  });
+
+  it('renders custom display body when provided', () => {
+    render(
+      <VMDetailView
+        vm={{ ...mockVM, status: VMStatus.Running }}
+        displayBody={<p>Embedded Display Canvas</p>}
+        onOpenDisplay={vi.fn()}
+        onCloseDisplay={vi.fn()}
+        onUpdateConfig={vi.fn()}
+        onAction={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Display'));
+    expect(screen.getByText('Embedded Display Canvas')).toBeInTheDocument();
   });
 
   it('shows display last error and disables close when disconnected', () => {

@@ -137,3 +137,12 @@ Critical: When creating the plan.md content, your are responsible for deciding w
 - Must ship both apps public-ready; verify via manual + automated testing in both apps.
 - App naming must clearly include framework suffix `(Tauri)` / `(Electron)` on user-facing identity.
 - After planning approval: update plan docs first; wait for user `Go` before execution.
+
+## Approved Context (2026-02-06 Electron Release Loop)
+- Execution scope for active run: Electron only.
+- Packaging target: single universal macOS artifact (arm64 + x64).
+- Verification bar: 2 consecutive full green cycles required.
+- Manual workflow must include full Ubuntu LTS install start->end.
+- Embedded SPICE viewer required for Electron release readiness.
+- QEMU missing flow: in-app action opens Terminal Homebrew install command.
+- Evidence required each cycle: scripted logs + manual checklist + screenshots.
