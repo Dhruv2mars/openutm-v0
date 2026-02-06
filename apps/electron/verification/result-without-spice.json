@@ -1,0 +1,18 @@
+{
+  "cycle": 1,
+  "status": "PASSED",
+  "startedAt": "2026-02-06T12:53:17.861Z",
+  "vmId": "aae62410-263e-44e1-b119-5fac6376730e",
+  "vmName": "verification-cycle-1-1770382401892",
+  "qemuPath": "/opt/homebrew/bin/qemu-system-x86_64",
+  "qemuVersion": "QEMU emulator version 10.2.0",
+  "spiceSupported": false,
+  "websocketUri": null,
+  "screenshotPath": "/Users/dhruv2mars/dev/github/openutm-v0/apps/electron/verification/cycle-1/display.png",
+  "logPath": "/Users/dhruv2mars/dev/github/openutm-v0/apps/electron/verification/cycle-1/app.log",
+  "endResult": {
+    "vmId": "aae62410-263e-44e1-b119-5fac6376730e",
+    "remainingVms": 0
+  },
+  "completedAt": "2026-02-06T12:53:37.205Z"
+}

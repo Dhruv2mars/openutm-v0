@@ -6,11 +6,13 @@ import { Input } from './Input';
 export interface VMWizardProps {
   onComplete: (config: VMConfig) => void;
   onCancel: () => void;
+  onPickInstallMedia?: (vmId?: string) => Promise<string | null> | string | null;
 }
 
 export interface VMConfig {
   os: 'linux' | 'windows' | 'macos' | 'other';
   isoFile: File | null;
+  installMediaPath: string | null;
   ram: number;
   cpu: number;
   disk: number;
@@ -25,11 +27,12 @@ const STEPS = [
   'Review Settings'
 ];
 
-const VMWizard: React.FC<VMWizardProps> = ({ onComplete, onCancel }) => {
+const VMWizard: React.FC<VMWizardProps> = ({ onComplete, onCancel, onPickInstallMedia }) => {
   const [step, setStep] = useState(0);
   const [config, setConfig] = useState<VMConfig>({
     os: 'linux',
     isoFile: null,
+    installMediaPath: null,
     ram: 2048,
     cpu: 2,
     disk: 25,
@@ -76,11 +79,31 @@ const VMWizard: React.FC<VMWizardProps> = ({ onComplete, onCancel }) => {
       setConfig(prev => ({
         ...prev,
         isoFile: file,
+        installMediaPath: file.name,
         os: detected || prev.os,
         ...getDefaults(detected || prev.os)
       }));
       setOsDetected(detected ? `Detected: ${detected.charAt(0).toUpperCase() + detected.slice(1)}` : null);
     }
+  };
+
+  const handlePickInstallMedia = async () => {
+    const selectedPath = await onPickInstallMedia?.();
+    if (!selectedPath) {
+      return;
+    }
+
+    const parts = selectedPath.split(/[\\/]/);
+    const filename = parts[parts.length - 1];
+    const detected = detectOS(filename);
+    setConfig((prev) => ({
+      ...prev,
+      isoFile: null,
+      installMediaPath: selectedPath,
+      os: detected || prev.os,
+      ...getDefaults(detected || prev.os),
+    }));
+    setOsDetected(detected ? `Detected: ${detected.charAt(0).toUpperCase() + detected.slice(1)}` : null);
   };
 
   const detectOS = (filename: string): VMConfig['os'] | null => {
@@ -113,7 +136,19 @@ const VMWizard: React.FC<VMWizardProps> = ({ onComplete, onCancel }) => {
 
         {step === 1 && (
           <div className="space-y-4">
-             <label className="block text-sm font-medium text-gray-700">
+            {onPickInstallMedia ? (
+              <div className="space-y-3">
+                <Button onClick={() => void handlePickInstallMedia()} variant="secondary">
+                  Choose ISO
+                </Button>
+                {config.installMediaPath ? (
+                  <p className="text-sm text-gray-600 break-all">{config.installMediaPath}</p>
+                ) : (
+                  <p className="text-sm text-gray-500">No install media selected.</p>
+                )}
+              </div>
+            ) : (
+              <label className="block text-sm font-medium text-gray-700">
                 ISO File
                 <input
                   type="file"
@@ -122,7 +157,8 @@ const VMWizard: React.FC<VMWizardProps> = ({ onComplete, onCancel }) => {
                   className="mt-1 block w-full"
                   aria-label="ISO File"
                 />
-            </label>
+              </label>
+            )}
             {osDetected && (
               <div className="p-2 bg-green-100 text-green-800 rounded">
                 {osDetected}
@@ -174,7 +210,7 @@ const VMWizard: React.FC<VMWizardProps> = ({ onComplete, onCancel }) => {
         {step === 4 && (
           <div className="space-y-2">
             <p><strong>OS:</strong> {config.os}</p>
-            <p><strong>ISO:</strong> {config.isoFile?.name || 'None'}</p>
+            <p><strong>ISO:</strong> {config.installMediaPath || config.isoFile?.name || 'None'}</p>
             <p><strong>RAM:</strong> {config.ram} MB</p>
             <p><strong>CPU:</strong> {config.cpu} Cores</p>
             <p><strong>Disk:</strong> {config.disk} GB</p>

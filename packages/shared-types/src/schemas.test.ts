@@ -164,6 +164,8 @@ describe('Zod Schemas', () => {
           memory: 8192,
           disks: [validDisk],
           network: { type: 'nat' },
+          bootOrder: 'disk-first',
+          networkType: 'nat',
         })
       ).not.toThrow();
     });
@@ -174,6 +176,8 @@ describe('Zod Schemas', () => {
         memory: 8192,
         disks: [validDisk],
         network: { type: 'nat' },
+        bootOrder: 'disk-first',
+        networkType: 'nat',
       });
       expect(result.success).toBe(false);
     });
@@ -184,6 +188,8 @@ describe('Zod Schemas', () => {
         memory: 0,
         disks: [validDisk],
         network: { type: 'nat' },
+        bootOrder: 'disk-first',
+        networkType: 'nat',
       });
       expect(result.success).toBe(false);
     });
@@ -194,8 +200,21 @@ describe('Zod Schemas', () => {
         memory: 8192,
         disks: [],
         network: { type: 'nat' },
+        bootOrder: 'disk-first',
+        networkType: 'nat',
       });
       expect(result.success).toBe(false);
+    });
+
+    it('fills defaults for legacy config missing boot/network fields', () => {
+      const parsed = VMConfigSchema.parse({
+        cpu: 2,
+        memory: 2048,
+        disks: [validDisk],
+        network: { type: 'nat' },
+      });
+      expect(parsed.bootOrder).toBe('disk-first');
+      expect(parsed.networkType).toBe('nat');
     });
   });
 
@@ -215,6 +234,8 @@ describe('Zod Schemas', () => {
           },
         ],
         network: { type: 'nat' },
+        bootOrder: 'disk-first' as const,
+        networkType: 'nat' as const,
       },
     };
 
@@ -293,6 +314,38 @@ describe('Zod Schemas', () => {
 
     it('validates a display session', () => {
       expect(() => DisplaySessionSchema.parse(validSession)).not.toThrow();
+    });
+
+    it('accepts optional connectedAt timestamp', () => {
+      const parsed = DisplaySessionSchema.parse({
+        ...validSession,
+        connectedAt: '2026-02-06T07:00:00.000Z',
+      });
+      expect(parsed.connectedAt).toBe('2026-02-06T07:00:00.000Z');
+    });
+
+    it('accepts optional websocket URI', () => {
+      const parsed = DisplaySessionSchema.parse({
+        ...validSession,
+        websocketUri: 'ws://127.0.0.1:5960/spice/test',
+      });
+      expect(parsed.websocketUri).toBe('ws://127.0.0.1:5960/spice/test');
+    });
+
+    it('rejects invalid websocket URI', () => {
+      const result = DisplaySessionSchema.safeParse({
+        ...validSession,
+        websocketUri: 'not-a-uri',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid connectedAt timestamp', () => {
+      const result = DisplaySessionSchema.safeParse({
+        ...validSession,
+        connectedAt: 'not-a-date',
+      });
+      expect(result.success).toBe(false);
     });
 
     it('rejects invalid port', () => {

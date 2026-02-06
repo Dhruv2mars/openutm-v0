@@ -23,6 +23,8 @@ tracing-subscriber = "0.3"
 rusqlite = { version = "0.30", features = ["bundled"] }
 sysinfo = "0.30"
 uuid = { version = "1.0", features = ["v4", "serde"] }
+rfd = "0.15"
+chrono = { version = "0.4", features = ["clock"] }
 
 [dev-dependencies]
 tempfile = "3.8"

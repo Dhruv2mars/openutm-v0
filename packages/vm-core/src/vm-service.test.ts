@@ -31,6 +31,8 @@ describe('VMService', () => {
       expect(vm.name).toBe('Test VM');
       expect(vm.config.cpu).toBe(2);
       expect(vm.config.memory).toBe(2048);
+      expect(vm.config.bootOrder).toBe('disk-first');
+      expect(vm.config.networkType).toBe('nat');
       expect(vm.status).toBe(VMStatus.Stopped);
     });
 

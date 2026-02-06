@@ -1,5 +1,7 @@
-use crate::{QemuInfo, Result, Error};
-use std::path::PathBuf;
+use crate::{Error, QemuInfo, Result};
+use std::collections::HashSet;
+use std::env;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Detect QEMU binary and get system information
@@ -27,24 +29,92 @@ pub async fn detect() -> Result<QemuInfo> {
     })
 }
 
-/// Find QEMU binary in system PATH
-pub fn find_qemu_binary() -> Result<PathBuf> {
-    let search_paths = get_search_paths();
+fn candidate_binary_names() -> &'static [&'static str] {
+    &["qemu-system-aarch64", "qemu-system-x86_64"]
+}
 
-    for path in search_paths {
-        if path.exists() {
-            return Ok(path);
+fn default_shell_path() -> String {
+    "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_string()
+}
+
+fn build_lookup_path() -> String {
+    let current = env::var("PATH").unwrap_or_default();
+    if current.is_empty() {
+        return default_shell_path();
+    }
+    format!("{}:{}", current, default_shell_path())
+}
+
+fn append_candidate_if_exists(
+    seen: &mut HashSet<String>,
+    candidates: &mut Vec<PathBuf>,
+    path: PathBuf,
+) {
+    let key = path.display().to_string();
+    if seen.contains(&key) {
+        return;
+    }
+    if path.exists() {
+        seen.insert(key);
+        candidates.push(path);
+    }
+}
+
+fn collect_qemu_candidates() -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    let mut candidates = Vec::new();
+
+    for base in get_search_paths() {
+        append_candidate_if_exists(&mut seen, &mut candidates, base);
+    }
+
+    // Add resolved binaries from PATH, with a default macOS-friendly PATH fallback.
+    let lookup_path = build_lookup_path();
+    for binary in candidate_binary_names() {
+        let output = Command::new("which")
+            .arg(binary)
+            .env("PATH", &lookup_path)
+            .output();
+        if let Ok(result) = output {
+            if result.status.success() {
+                let path_str = String::from_utf8_lossy(&result.stdout).trim().to_string();
+                if !path_str.is_empty() {
+                    append_candidate_if_exists(
+                        &mut seen,
+                        &mut candidates,
+                        PathBuf::from(path_str),
+                    );
+                }
+            }
         }
     }
 
-    // Fallback: try via which command
-    if let Ok(output) = Command::new("which")
-        .arg("qemu-system-x86_64")
+    candidates
+}
+
+fn is_runnable_qemu(path: &Path) -> bool {
+    Command::new(path)
+        .arg("--version")
         .output()
-    {
-        if output.status.success() {
-            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return Ok(PathBuf::from(path_str));
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+/// Find QEMU binary in system PATH
+pub fn find_qemu_binary() -> Result<PathBuf> {
+    let candidates = collect_qemu_candidates();
+
+    // Prefer candidates that are directly runnable.
+    for path in &candidates {
+        if is_runnable_qemu(path) {
+            return Ok(path.clone());
+        }
+    }
+
+    // Fall back to existing binaries, even if version probing failed.
+    for path in candidates {
+        if path.exists() {
+            return Ok(path);
         }
     }
 
@@ -94,10 +164,14 @@ fn detect_whpx_support() -> Result<String> {
 #[cfg(target_os = "macos")]
 fn get_search_paths() -> Vec<PathBuf> {
     vec![
-        PathBuf::from("/usr/local/bin/qemu-system-aarch64"),
-        PathBuf::from("/opt/homebrew/bin/qemu-system-aarch64"),
-        PathBuf::from("/usr/local/bin/qemu-system-x86_64"),
         PathBuf::from("/opt/homebrew/bin/qemu-system-x86_64"),
+        PathBuf::from("/opt/homebrew/bin/qemu-system-aarch64"),
+        PathBuf::from("/opt/homebrew/opt/qemu/bin/qemu-system-x86_64"),
+        PathBuf::from("/opt/homebrew/opt/qemu/bin/qemu-system-aarch64"),
+        PathBuf::from("/usr/local/bin/qemu-system-x86_64"),
+        PathBuf::from("/usr/local/bin/qemu-system-aarch64"),
+        PathBuf::from("/usr/bin/qemu-system-x86_64"),
+        PathBuf::from("/usr/bin/qemu-system-aarch64"),
     ]
 }
 
@@ -241,6 +315,13 @@ mod tests {
     fn test_get_search_paths_not_empty() {
         let paths = get_search_paths();
         assert!(!paths.is_empty(), "Search paths should not be empty for any platform");
+    }
+
+    #[test]
+    fn test_candidate_binary_names_cover_supported_system_types() {
+        let names = candidate_binary_names();
+        assert!(names.contains(&"qemu-system-aarch64"));
+        assert!(names.contains(&"qemu-system-x86_64"));
     }
 
     #[test]

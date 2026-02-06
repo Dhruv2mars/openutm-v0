@@ -60,6 +60,16 @@ describe('QEMU Command Builder', () => {
     expect(argsStr).toContain('port=5900');
   });
 
+  it('ignores non-SPICE display kind', () => {
+    const cmd = new QemuCommand().display({
+      kind: 'vnc',
+      options: { listen: '127.0.0.1' },
+    });
+
+    const args = cmd.build();
+    expect(args).not.toContain('-spice');
+  });
+
   it('adds USB tablet', () => {
     const cmd = new QemuCommand().usbTablet();
     const args = cmd.build();

@@ -231,4 +231,44 @@ describe('VMWizard', () => {
 
     expect(screen.queryByText(/Detected:/i)).not.toBeInTheDocument();
   });
+
+  it('uses backend install media picker when callback provided', async () => {
+    const user = userEvent.setup();
+    const onPickInstallMedia = vi.fn(async () => '/isos/ubuntu-24.04.iso');
+    const onComplete = vi.fn();
+    render(<VMWizard onComplete={onComplete} onCancel={() => {}} onPickInstallMedia={onPickInstallMedia} />);
+
+    await user.click(screen.getByRole('button', { name: /Linux/i }));
+    await user.click(screen.getByRole('button', { name: /Next/i }));
+    await user.click(screen.getByRole('button', { name: /Choose ISO/i }));
+    expect(onPickInstallMedia).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('/isos/ubuntu-24.04.iso')).toBeInTheDocument();
+  });
+
+  it('keeps empty state when backend picker returns no file', async () => {
+    const user = userEvent.setup();
+    const onPickInstallMedia = vi.fn(async () => null);
+    render(<VMWizard onComplete={() => {}} onCancel={() => {}} onPickInstallMedia={onPickInstallMedia} />);
+
+    await user.click(screen.getByRole('button', { name: /Linux/i }));
+    await user.click(screen.getByRole('button', { name: /Next/i }));
+    await user.click(screen.getByRole('button', { name: /Choose ISO/i }));
+
+    expect(onPickInstallMedia).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('No install media selected.')).toBeInTheDocument();
+  });
+
+  it('handles backend picker path with unknown OS detection', async () => {
+    const user = userEvent.setup();
+    const onPickInstallMedia = vi.fn(async () => '/isos/custom-build.iso');
+    render(<VMWizard onComplete={() => {}} onCancel={() => {}} onPickInstallMedia={onPickInstallMedia} />);
+
+    await user.click(screen.getByRole('button', { name: /Linux/i }));
+    await user.click(screen.getByRole('button', { name: /Next/i }));
+    await user.click(screen.getByRole('button', { name: /Choose ISO/i }));
+
+    expect(screen.queryByText(/Detected:/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Next/i }));
+    expect(screen.getByLabelText(/RAM/i)).toHaveValue(2048);
+  });
 });

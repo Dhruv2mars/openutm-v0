@@ -2,10 +2,11 @@ import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { platform } from 'os';
 
-interface QemuInfo {
+export interface QemuInfo {
   path: string;
   version: string;
   accelerators: string[];
+  spiceSupported: boolean;
 }
 
 const SEARCH_PATHS: Record<string, string[]> = {
@@ -37,12 +38,20 @@ function findQemuBinary(): string {
   }
 
   try {
-    const result = spawnSync('which', ['qemu-system-x86_64'], { 
+    const x64 = spawnSync('which', ['qemu-system-x86_64'], {
       encoding: 'utf-8',
       stdio: 'pipe'
     });
-    if (result.status === 0 && result.stdout) {
-      return result.stdout.trim();
+    if (x64.status === 0 && x64.stdout) {
+      return x64.stdout.trim();
+    }
+
+    const arm64 = spawnSync('which', ['qemu-system-aarch64'], {
+      encoding: 'utf-8',
+      stdio: 'pipe'
+    });
+    if (arm64.status === 0 && arm64.stdout) {
+      return arm64.stdout.trim();
     }
   } catch {
     // which command failed - fall through to error
@@ -107,14 +116,55 @@ function detectPlatformAccelerators(): string[] {
   return accelerators;
 }
 
+function prioritizeAccelerators(accelerators: string[]): string[] {
+  const preferred: string[] = [];
+  const osType = platform();
+
+  if (osType === 'darwin' && accelerators.includes('hvf')) preferred.push('hvf');
+  if (osType === 'linux' && accelerators.includes('kvm')) preferred.push('kvm');
+  if (osType === 'win32' && accelerators.includes('whpx')) preferred.push('whpx');
+  if (accelerators.includes('tcg')) preferred.push('tcg');
+
+  for (const accelerator of accelerators) {
+    if (!preferred.includes(accelerator)) {
+      preferred.push(accelerator);
+    }
+  }
+
+  if (preferred.length === 0) {
+    preferred.push('tcg');
+  }
+
+  return preferred;
+}
+
+function detectSpiceSupport(path: string): boolean {
+  try {
+    const result = spawnSync(path, ['-spice', 'help'], {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 5000,
+    });
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`.toLowerCase();
+    if (output.includes('spice options:')) {
+      return true;
+    }
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function detectQemu(): Promise<QemuInfo> {
   const qemuPath = findQemuBinary();
   const version = getQemuVersion(qemuPath);
-  const accelerators = detectPlatformAccelerators();
+  const accelerators = prioritizeAccelerators(detectPlatformAccelerators());
+  const spiceSupported = detectSpiceSupport(qemuPath);
 
   return {
     path: qemuPath,
     version,
-    accelerators
+    accelerators,
+    spiceSupported,
   };
 }

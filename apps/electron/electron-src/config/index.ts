@@ -7,6 +7,9 @@ interface VMConfigData {
   memory: number;
   cores: number;
   disk: string;
+  installMediaPath?: string;
+  bootOrder: 'disk-first' | 'cdrom-first';
+  networkType: 'nat' | 'bridge';
   qmpSocket?: string;
   accelerator?: string;
   createdAt: number;
@@ -17,29 +20,56 @@ interface ConfigStore {
   vms: VMConfigData[];
 }
 
-const CONFIG_DIR = path.join(process.env.HOME || '/tmp', '.openutm');
-const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
+function getConfigDir(): string {
+  return process.env.OPENUTM_CONFIG_DIR || path.join(process.env.HOME || '/tmp', '.openutm');
+}
+
+function getConfigPath(): string {
+  return path.join(getConfigDir(), 'config.json');
+}
 
 function ensureConfigDir(): void {
-  if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true });
+  const configDir = getConfigDir();
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
   }
+}
+
+function normalizeVmConfigData(raw: Partial<VMConfigData>): VMConfigData {
+  const now = Date.now();
+  return {
+    id: raw.id || '',
+    name: raw.name || '',
+    memory: raw.memory || 2048,
+    cores: raw.cores || 2,
+    disk: raw.disk || '',
+    installMediaPath: raw.installMediaPath,
+    bootOrder: raw.bootOrder || 'disk-first',
+    networkType: raw.networkType || 'nat',
+    qmpSocket: raw.qmpSocket,
+    accelerator: raw.accelerator,
+    createdAt: raw.createdAt || now,
+    updatedAt: raw.updatedAt || now,
+  };
 }
 
 function readStore(): ConfigStore {
   ensureConfigDir();
+  const configPath = getConfigPath();
 
-  if (!existsSync(CONFIG_PATH)) {
+  if (!existsSync(configPath)) {
     return { vms: [] };
   }
 
   try {
-    const raw = readFileSync(CONFIG_PATH, 'utf8');
+    const raw = readFileSync(configPath, 'utf8');
     const parsed = JSON.parse(raw) as ConfigStore;
     if (!parsed || !Array.isArray(parsed.vms)) {
       return { vms: [] };
     }
-    return parsed;
+    return {
+      vms: parsed.vms.map((vm) => normalizeVmConfigData(vm)),
+    };
   } catch {
     return { vms: [] };
   }
@@ -47,9 +77,11 @@ function readStore(): ConfigStore {
 
 function writeStore(store: ConfigStore): void {
   ensureConfigDir();
-  const tempPath = `${CONFIG_PATH}.tmp`;
+  const configPath = getConfigPath();
+  const tempPath = `${configPath}.tmp`;
   writeFileSync(tempPath, JSON.stringify(store, null, 2), 'utf8');
-  renameSync(tempPath, CONFIG_PATH);
+  renameSync(tempPath, configPath);
+  /* c8 ignore next 3 */
   if (existsSync(tempPath)) {
     unlinkSync(tempPath);
   }
@@ -68,7 +100,7 @@ export async function createVMConfig(config: Omit<VMConfigData, 'createdAt' | 'u
 
   const now = Date.now();
   const next: VMConfigData = {
-    ...config,
+    ...normalizeVmConfigData(config),
     createdAt: now,
     updatedAt: now,
   };

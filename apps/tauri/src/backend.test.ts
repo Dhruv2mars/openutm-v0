@@ -3,17 +3,23 @@ import { VMStatus } from "@openutm/shared-types";
 import type { VM } from "@openutm/shared-types";
 import {
   __setInvokeForTests,
+  __setGlobalInvokeForTests,
   closeDisplayViaBackend,
   createVmViaBackend,
   detectQemuViaBackend,
+  ejectInstallMediaViaBackend,
   getDisplayViaBackend,
   listVmsViaBackend,
   openDisplayViaBackend,
+  pickInstallMediaViaBackend,
+  setBootOrderViaBackend,
+  setInstallMediaViaBackend,
 } from "./backend";
 
 describe("tauri renderer backend bridge", () => {
   beforeEach(() => {
     __setInvokeForTests(null);
+    __setGlobalInvokeForTests(null);
   });
 
   it("throws when invoke bridge is missing", async () => {
@@ -39,6 +45,26 @@ describe("tauri renderer backend bridge", () => {
     expect(result.available).toBe(true);
     expect(result.minimumVersionMet).toBe(true);
     expect(result.accelerators).toEqual(["hvf"]);
+  });
+
+  it("uses global tauri invoke bridge when override is not provided", async () => {
+    __setGlobalInvokeForTests(
+      mock(async (cmd: string) => {
+        if (cmd === "detect_qemu") {
+          return {
+            detected: true,
+            path: "/opt/homebrew/bin/qemu-system-aarch64",
+            version: "QEMU emulator version 10.2.0",
+            accelerator: "HVF",
+          };
+        }
+        throw new Error("unexpected command");
+      }),
+    );
+
+    const result = await detectQemuViaBackend();
+    expect(result.available).toBe(true);
+    expect(result.minimumVersionMet).toBe(true);
   });
 
   it("maps list_vms into shared VM shape", async () => {
@@ -81,6 +107,9 @@ describe("tauri renderer backend bridge", () => {
             },
           ],
           network: { type: "nat" },
+          installMediaPath: undefined,
+          bootOrder: "disk-first",
+          networkType: "nat",
         },
       },
     ];
@@ -111,6 +140,7 @@ describe("tauri renderer backend bridge", () => {
       cpu: 4,
       memory: 4096,
       diskSizeGb: 40,
+      bootOrder: "disk-first",
       networkType: "nat",
       os: "linux",
     });
@@ -143,6 +173,25 @@ describe("tauri renderer backend bridge", () => {
 
     expect(opened.status).toBe("connected");
     expect(fetched?.uri).toBe("spice://127.0.0.1:5901");
+    expect(invoke).toHaveBeenCalled();
+  });
+
+  it("passes install-media and boot-order commands via invoke", async () => {
+    const invoke = mock(async (cmd: string) => {
+      if (cmd === "pick_install_media") return "/isos/ubuntu.iso";
+      if (cmd === "set_install_media") return;
+      if (cmd === "eject_install_media") return;
+      if (cmd === "set_boot_order") return;
+      throw new Error("unexpected command");
+    });
+    __setInvokeForTests(invoke);
+
+    const path = await pickInstallMediaViaBackend("vm-1");
+    await setInstallMediaViaBackend("vm-1", "/isos/ubuntu.iso");
+    await ejectInstallMediaViaBackend("vm-1");
+    await setBootOrderViaBackend("vm-1", "disk-first");
+
+    expect(path).toBe("/isos/ubuntu.iso");
     expect(invoke).toHaveBeenCalled();
   });
 });

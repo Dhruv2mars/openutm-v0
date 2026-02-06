@@ -37,6 +37,8 @@ export class VMService extends EventEmitter {
         },
       ],
       network: { type: 'nat' },
+      bootOrder: 'disk-first',
+      networkType: 'nat',
     };
 
     const vm: VM = {

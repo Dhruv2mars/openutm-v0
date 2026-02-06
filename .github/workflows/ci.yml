@@ -7,16 +7,31 @@ on:
     branches: [main]
 
 jobs:
-  verify-release:
-    runs-on: macos-latest
+  electron-arm64-full:
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
       - name: Install dependencies
         run: bun install
-      - name: Run release gate
-        run: bun run verify:release
+      - name: Run Electron release gate
+        run: bun run verify:electron-release
+
+  electron-x64-smoke:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install
+      - name: Run Electron smoke gate (x64)
+        run: |
+          bun run --cwd apps/electron lint
+          bun run --cwd apps/electron typecheck
+          bun run --cwd apps/electron test
+          bun run --cwd apps/electron pack:x64
+          node apps/electron/scripts/check-package.mjs --arch x64
