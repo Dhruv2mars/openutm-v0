@@ -1,5 +1,5 @@
 {
-  "productName": "OpenUTM",
+  "productName": "OpenUTM (Tauri)",
   "version": "0.1.0",
   "identifier": "com.openutm.desktop",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "OpenUTM",
+        "title": "OpenUTM (Tauri)",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

@@ -29,17 +29,6 @@ describe('VMListSidebar', () => {
   });
 
   it('sorts VMs: running first, then alphabetical', () => {
-    // Input order is mixed. 
-    // Expected order:
-    // 1. Windows 11 (running)
-    // 2. Arch Linux (error/stopped/paused are "not running", so alpha among them?)
-    // Prompt says: "Sort: running first, then alphabetical"
-    // So Running > Others. Then alphabetical within groups? Or Running > Alphabetical for all others?
-    // Let's assume Running > All others. And others are alphabetical.
-    
-    // Running: Windows 11
-    // Others (sorted alpha): Arch Linux, macOS Sequoia, Ubuntu 22.04
-    
     render(
       <VMListSidebar
         vms={mockVMs}
@@ -83,7 +72,6 @@ describe('VMListSidebar', () => {
   });
 
   it('calls onContextMenu when a VM is right-clicked (mock)', () => {
-    // Testing native context menu is hard, but we can test the trigger
     render(
       <VMListSidebar
         vms={mockVMs}
@@ -93,14 +81,20 @@ describe('VMListSidebar', () => {
     );
 
     fireEvent.contextMenu(screen.getByText('Windows 11'));
-    // We expect the custom handler to be called or a menu to appear. 
-    // If we just implement onContextMenu prop on the item:
-    // expect(mockOnContextMenu).toHaveBeenCalledWith('1', 'start'); // No, context menu usually opens UI
-    // For this test, let's just ensure the event handler on the item fires
-    // Implementation details might vary (custom UI vs native).
-    // Prompt says "Context menu (Start/Stop/Delete)". 
-    // Let's assume we render a custom menu or trigger a callback.
-    // For now, let's assume the component exposes the context menu event.
+    expect(mockOnContextMenu).toHaveBeenCalledWith('1', 'stop');
+  });
+
+  it('uses start action in context menu for non-running VM', () => {
+    render(
+      <VMListSidebar
+        vms={mockVMs}
+        onSelect={mockOnSelect}
+        onContextMenu={mockOnContextMenu}
+      />
+    );
+
+    fireEvent.contextMenu(screen.getByText('Ubuntu 22.04'));
+    expect(mockOnContextMenu).toHaveBeenCalledWith('2', 'start');
   });
 
   it('shows empty state when no VMs', () => {

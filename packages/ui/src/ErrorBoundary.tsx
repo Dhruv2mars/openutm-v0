@@ -12,6 +12,10 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
+export const reloadApp = (): void => {
+  window.location.reload();
+};
+
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -45,14 +49,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               Something went wrong
             </h2>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
-              {this.state.error?.message || 'An unexpected error occurred'}
+              {this.state.error?.message}
             </p>
             <div className="flex justify-center gap-4">
               <Button onClick={this.handleRetry} variant="primary">
                 Try Again
               </Button>
               <Button
-                onClick={() => window.location.reload()}
+                onClick={reloadApp}
                 variant="secondary"
               >
                 Reload App

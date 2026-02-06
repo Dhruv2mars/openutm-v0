@@ -152,6 +152,13 @@ describe('VMService', () => {
 
       expect(pauseHandler).toHaveBeenCalledOnce();
     });
+
+    it('should not pause stopped VM', async () => {
+      const config = { name: 'Test', cpu: 2, memory: 2048, diskSize: 50 };
+      const vm = await service.create(config);
+
+      await expect(service.pause(vm.id)).rejects.toThrow('Cannot pause VM in stopped state');
+    });
   });
 
   describe('resume', () => {
@@ -177,6 +184,14 @@ describe('VMService', () => {
       await service.resume(vm.id);
 
       expect(resumeHandler).toHaveBeenCalledOnce();
+    });
+
+    it('should not resume running VM', async () => {
+      const config = { name: 'Test', cpu: 2, memory: 2048, diskSize: 50 };
+      const vm = await service.create(config);
+      await service.start(vm.id);
+
+      await expect(service.resume(vm.id)).rejects.toThrow('Cannot resume VM in running state');
     });
   });
 
@@ -265,6 +280,29 @@ describe('VMService', () => {
       await service.start(vm.id);
 
       await expect(service.updateVM(vm.id, { cpu: 4 })).rejects.toThrow();
+    });
+
+    it('should validate updated CPU count', async () => {
+      const config = { name: 'Test', cpu: 2, memory: 2048, diskSize: 50 };
+      const vm = await service.create(config);
+
+      await expect(service.updateVM(vm.id, { cpu: 0 })).rejects.toThrow('CPU count must be positive');
+    });
+
+    it('should validate updated memory amount', async () => {
+      const config = { name: 'Test', cpu: 2, memory: 2048, diskSize: 50 };
+      const vm = await service.create(config);
+
+      await expect(service.updateVM(vm.id, { memory: 0 })).rejects.toThrow('Memory must be positive');
+    });
+
+    it('should update VM name', async () => {
+      const config = { name: 'Original', cpu: 2, memory: 2048, diskSize: 50 };
+      const vm = await service.create(config);
+
+      const updated = await service.updateVM(vm.id, { name: 'Renamed' });
+
+      expect(updated.name).toBe('Renamed');
     });
   });
 });

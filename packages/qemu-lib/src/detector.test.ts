@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as detector from './detector';
 import { Accelerator } from '@openutm/shared-types';
 
@@ -10,8 +10,26 @@ import { execSync } from 'child_process';
 const mockedExecSync = execSync as any;
 
 describe('QEMU Detection', () => {
+  const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+
+  const setPlatform = (value: string) => {
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value,
+    });
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    if (originalPlatformDescriptor) {
+      Object.defineProperty(process, 'platform', originalPlatformDescriptor);
+    }
+  });
+
+  afterEach(() => {
+    if (originalPlatformDescriptor) {
+      Object.defineProperty(process, 'platform', originalPlatformDescriptor);
+    }
   });
 
   describe('detectQemu', () => {
@@ -57,6 +75,118 @@ describe('QEMU Detection', () => {
       const result = await detector.detectQemu();
 
       expect(result.accelerators).toContain(Accelerator.TCG);
+    });
+
+    it('should include HVF on darwin when hypervisor is supported', async () => {
+      setPlatform('darwin');
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which qemu-system')) {
+          return '/usr/local/bin/qemu-system-aarch64\n';
+        }
+        if (cmd.includes('--version')) {
+          return 'QEMU emulator version 8.0.0\n';
+        }
+        if (cmd.includes('sysctl kern.hv_support')) {
+          return 'kern.hv_support: 1';
+        }
+        return '';
+      });
+
+      const result = await detector.detectQemu();
+      expect(result.accelerators).toContain(Accelerator.HVF);
+    });
+
+    it('should continue when qemu version lookup fails', async () => {
+      setPlatform('darwin');
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which qemu-system')) {
+          return '/usr/local/bin/qemu-system-aarch64\n';
+        }
+        if (cmd.includes('--version')) {
+          throw new Error('version failed');
+        }
+        if (cmd.includes('sysctl kern.hv_support')) {
+          return 'kern.hv_support: 1';
+        }
+        return '';
+      });
+
+      const result = await detector.detectQemu();
+      expect(result.available).toBe(true);
+      expect(result.version).toBeNull();
+    });
+
+    it('should include WHPX on win32 when feature is available', async () => {
+      setPlatform('win32');
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which qemu-system')) {
+          return '/usr/local/bin/qemu-system-aarch64\n';
+        }
+        if (cmd.includes('--version')) {
+          return 'QEMU emulator version 8.0.0\n';
+        }
+        if (cmd.includes('Get-WindowsOptionalFeature')) {
+          return 'Enabled';
+        }
+        return '';
+      });
+
+      const result = await detector.detectQemu();
+      expect(result.accelerators).toContain(Accelerator.WHPX);
+    });
+
+    it('should fall back to TCG on linux when KVM detection fails', async () => {
+      setPlatform('linux');
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which qemu-system')) {
+          return '/usr/local/bin/qemu-system-aarch64\n';
+        }
+        if (cmd.includes('--version')) {
+          return 'QEMU emulator version 8.0.0\n';
+        }
+        if (cmd.includes('test -e /dev/kvm')) {
+          throw new Error('kvm not available');
+        }
+        return '';
+      });
+
+      const result = await detector.detectQemu();
+      expect(result.accelerators).toEqual([Accelerator.TCG]);
+    });
+
+    it('should fall back to TCG on win32 when WHPX detection fails', async () => {
+      setPlatform('win32');
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which qemu-system')) {
+          return '/usr/local/bin/qemu-system-aarch64\n';
+        }
+        if (cmd.includes('--version')) {
+          return 'QEMU emulator version 8.0.0\n';
+        }
+        if (cmd.includes('Get-WindowsOptionalFeature')) {
+          throw new Error('feature query failed');
+        }
+        return '';
+      });
+
+      const result = await detector.detectQemu();
+      expect(result.accelerators).toEqual([Accelerator.TCG]);
+    });
+
+    it('should keep TCG only on unknown platforms', async () => {
+      setPlatform('sunos');
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which qemu-system')) {
+          return '/usr/local/bin/qemu-system-aarch64\n';
+        }
+        if (cmd.includes('--version')) {
+          return 'QEMU emulator version 8.0.0\n';
+        }
+        return '';
+      });
+
+      const result = await detector.detectQemu();
+      expect(result.accelerators).toEqual([Accelerator.TCG]);
     });
   });
 
@@ -141,6 +271,36 @@ describe('QEMU Detection', () => {
 
       expect(isValid).toBe(false);
     });
+
+    it('should return false when version output is malformed', async () => {
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which')) {
+          return '/usr/bin/qemu\n';
+        }
+        if (cmd.includes('--version')) {
+          return 'not-a-version\n';
+        }
+        return '';
+      });
+
+      const isValid = await detector.checkVersion();
+      expect(isValid).toBe(false);
+    });
+
+    it('should return false when version command throws', async () => {
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which')) {
+          return '/usr/bin/qemu\n';
+        }
+        if (cmd.includes('--version')) {
+          throw new Error('exec failed');
+        }
+        return '';
+      });
+
+      const isValid = await detector.checkVersion();
+      expect(isValid).toBe(false);
+    });
   });
 
   describe('getInstallSuggestion', () => {
@@ -161,6 +321,24 @@ describe('QEMU Detection', () => {
       const suggestion = await detector.getInstallSuggestion();
 
       expect(suggestion.toLowerCase()).toMatch(/brew|apt|dnf|choco|download/i);
+    });
+
+    it('should return linux instructions on linux platform', async () => {
+      setPlatform('linux');
+      const suggestion = await detector.getInstallSuggestion();
+      expect(suggestion).toContain('apt install');
+    });
+
+    it('should return windows instructions on windows platform', async () => {
+      setPlatform('win32');
+      const suggestion = await detector.getInstallSuggestion();
+      expect(suggestion).toContain('Chocolatey');
+    });
+
+    it('should return generic instructions on unknown platform', async () => {
+      setPlatform('sunos');
+      const suggestion = await detector.getInstallSuggestion();
+      expect(suggestion).toContain('https://www.qemu.org/download/');
     });
   });
 
@@ -212,6 +390,61 @@ describe('QEMU Detection', () => {
       const path = await detector.getQemuPath();
 
       expect(path).toBe('/usr/bin/qemu-system-x86_64');
+    });
+
+    it('should include KVM accelerator on linux when available', async () => {
+      setPlatform('linux');
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which qemu-system')) {
+          throw new Error('not found');
+        }
+        if (cmd.includes('test -e /dev/kvm')) {
+          return '';
+        }
+        return '';
+      });
+
+      const result = await detector.detectQemu();
+      expect(result.accelerators).toContain(Accelerator.KVM);
+    });
+
+    it('should include WHPX accelerator on win32 when available', async () => {
+      setPlatform('win32');
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which qemu-system')) {
+          throw new Error('not found');
+        }
+        if (cmd.includes('Get-WindowsOptionalFeature')) {
+          return '';
+        }
+        return '';
+      });
+
+      const result = await detector.detectQemu();
+      expect(result.accelerators).toContain(Accelerator.WHPX);
+    });
+
+    it('should fall back through detectQemu outer catch when platform getter throws', async () => {
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes('which qemu-system')) {
+          return '/usr/local/bin/qemu-system-aarch64\n';
+        }
+        if (cmd.includes('--version')) {
+          return 'QEMU emulator version 8.0.0\n';
+        }
+        return '';
+      });
+
+      Object.defineProperty(process, 'platform', {
+        configurable: true,
+        get() {
+          throw new Error('platform read failed');
+        },
+      });
+
+      const result = await detector.detectQemu();
+      expect(result.available).toBe(false);
+      expect(result.path).toBeNull();
     });
   });
 });

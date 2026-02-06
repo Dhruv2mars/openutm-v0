@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { VMDetailView } from './VMDetailView';
-import { VM, VMStatus, Platform, Accelerator } from '@openutm/shared-types';
+import { VM, VMStatus } from '@openutm/shared-types';
 
 const mockVM: VM = {
   id: 'test-vm-1',
@@ -84,12 +84,16 @@ describe('VMDetailView', () => {
     
     const cpuInput = screen.getByLabelText('CPU Cores');
     fireEvent.change(cpuInput, { target: { value: '4' } });
+
+    const memoryInput = screen.getByLabelText('Memory (MB)');
+    fireEvent.change(memoryInput, { target: { value: '8192' } });
     
     const saveButton = screen.getByText('Save Changes');
     fireEvent.click(saveButton);
     
     expect(onUpdateConfig).toHaveBeenCalledWith(mockVM.id, expect.objectContaining({
-      cpu: 4
+      cpu: 4,
+      memory: 8192,
     }));
   });
 
@@ -113,5 +117,72 @@ describe('VMDetailView', () => {
     fireEvent.click(confirmButton);
     
     expect(onDelete).toHaveBeenCalledWith(mockVM.id);
+  });
+
+  it('shows running actions and triggers stop/pause', () => {
+    const onAction = vi.fn();
+    render(
+      <VMDetailView
+        vm={{ ...mockVM, status: VMStatus.Running }}
+        onUpdateConfig={vi.fn()}
+        onAction={onAction}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Stop'));
+    fireEvent.click(screen.getByText('Pause'));
+    expect(onAction).toHaveBeenCalledWith(mockVM.id, 'stop');
+    expect(onAction).toHaveBeenCalledWith(mockVM.id, 'pause');
+  });
+
+  it('shows paused action and triggers resume', () => {
+    const onAction = vi.fn();
+    render(
+      <VMDetailView
+        vm={{ ...mockVM, status: VMStatus.Paused }}
+        onUpdateConfig={vi.fn()}
+        onAction={onAction}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Resume'));
+    expect(onAction).toHaveBeenCalledWith(mockVM.id, 'resume');
+  });
+
+  it('renders drives and network tabs', () => {
+    render(
+      <VMDetailView
+        vm={mockVM}
+        onUpdateConfig={vi.fn()}
+        onAction={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Drives'));
+    expect(screen.getByText('/tmp/disk.qcow2')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Network'));
+    expect(screen.getByText('Type: nat')).toBeInTheDocument();
+  });
+
+  it('cancels delete confirmation modal', () => {
+    const onDelete = vi.fn();
+    render(
+      <VMDetailView
+        vm={mockVM}
+        onUpdateConfig={vi.fn()}
+        onAction={vi.fn()}
+        onDelete={onDelete}
+      />
+    );
+
+    fireEvent.click(screen.getByText('Delete VM'));
+    fireEvent.click(screen.getByText('Cancel'));
+
+    expect(screen.queryByText('Are you sure?')).not.toBeInTheDocument();
+    expect(onDelete).not.toHaveBeenCalled();
   });
 });

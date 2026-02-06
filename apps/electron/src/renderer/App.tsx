@@ -279,7 +279,7 @@ function App() {
   const toolbar = (
     <div className="flex items-center justify-between w-full">
       <span className="font-semibold text-gray-700 dark:text-gray-200">
-        {selectedVm?.name || 'OpenUTM'}
+        {selectedVm?.name || 'OpenUTM (Electron)'}
       </span>
       <button
         onClick={() => setIsDarkMode(!isDarkMode)}

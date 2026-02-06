@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import MainLayout from './MainLayout';
 import React from 'react';
@@ -38,7 +38,7 @@ describe('MainLayout', () => {
   });
 
   it('applies dark mode class when isDarkMode is true', () => {
-      const { container } = render(
+    const { container } = render(
       <MainLayout
         sidebar={<div>Sidebar</div>}
         toolbar={<div>Toolbar</div>}
@@ -49,5 +49,43 @@ describe('MainLayout', () => {
       </MainLayout>
     );
     expect(container.firstChild).toHaveClass('dark');
+  });
+
+  it('resizes sidebar and clamps width boundaries', () => {
+    render(
+      <MainLayout
+        sidebar={<div>Sidebar</div>}
+        toolbar={<div>Toolbar</div>}
+        isDarkMode={false}
+        onThemeToggle={() => {}}
+      >
+        <div>Main</div>
+      </MainLayout>
+    );
+
+    const sidebar = screen.getByTestId('sidebar');
+    const handle = screen.getByTestId('sidebar-resize-handle');
+
+    expect(sidebar).toHaveStyle({ width: '280px' });
+
+    fireEvent.mouseMove(document, { clientX: 450 });
+    expect(sidebar).toHaveStyle({ width: '280px' });
+
+    fireEvent.mouseDown(handle);
+    expect(document.body.style.cursor).toBe('col-resize');
+    expect(document.body.style.userSelect).toBe('none');
+
+    fireEvent.mouseMove(document, { clientX: 450 });
+    expect(sidebar).toHaveStyle({ width: '450px' });
+
+    fireEvent.mouseMove(document, { clientX: 50 });
+    expect(sidebar).toHaveStyle({ width: '200px' });
+
+    fireEvent.mouseMove(document, { clientX: 700 });
+    expect(sidebar).toHaveStyle({ width: '500px' });
+
+    fireEvent.mouseUp(document);
+    expect(document.body.style.cursor).toBe('');
+    expect(document.body.style.userSelect).toBe('');
   });
 });
