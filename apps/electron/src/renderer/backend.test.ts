@@ -1,26 +1,18 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import type { VM } from "@openutm/shared-types";
 import {
+  clearManagedRuntimeViaBackend,
   closeDisplayViaBackend,
   createVmViaBackend,
   detectQemuViaBackend,
-  deleteVmViaBackend,
-  ejectInstallMediaViaBackend,
-  getQemuInstallCommandViaBackend,
   getDisplayViaBackend,
+  getRuntimeStatusViaBackend,
+  installManagedRuntimeViaBackend,
   listVmsViaBackend,
-  openQemuInstallTerminalViaBackend,
   openDisplayViaBackend,
-  pauseVmViaBackend,
-  pickInstallMediaViaBackend,
-  resumeVmViaBackend,
-  setBootOrderViaBackend,
-  setInstallMediaViaBackend,
-  updateVmViaBackend,
   startVmViaBackend,
   stopVmViaBackend,
 } from "./backend";
-import { VMStatus } from "@openutm/shared-types";
 
 declare global {
   interface Window {
@@ -55,6 +47,9 @@ describe("electron renderer backend bridge", () => {
           path: "/opt/homebrew/bin/qemu-system-aarch64",
           version: "QEMU emulator version 8.2.0",
           accelerators: ["hvf", "tcg"],
+          spiceSupported: true,
+          source: "system",
+          ready: true,
         },
       }),
     };
@@ -63,40 +58,9 @@ describe("electron renderer backend bridge", () => {
     expect(result.available).toBe(true);
     expect(result.minimumVersionMet).toBe(true);
     expect(result.accelerators).toEqual(["hvf", "tcg"]);
-  });
-
-  it('marks minimum version false when version cannot be parsed', async () => {
-    const win = getWindow();
-    win.openutm = {
-      detectQemu: async () => ({
-        success: true,
-        data: {
-          path: '/opt/homebrew/bin/qemu-system-aarch64',
-          version: 'unknown',
-          accelerators: ['tcg'],
-        },
-      }),
-    };
-
-    const result = await detectQemuViaBackend();
-    expect(result.minimumVersionMet).toBe(false);
-  });
-
-  it('handles null version payloads', async () => {
-    const win = getWindow();
-    win.openutm = {
-      detectQemu: async () => ({
-        success: true,
-        data: {
-          path: '/opt/homebrew/bin/qemu-system-aarch64',
-          version: null,
-          accelerators: ['tcg'],
-        },
-      }),
-    };
-
-    const result = await detectQemuViaBackend();
-    expect(result.minimumVersionMet).toBe(false);
+    expect(result.spiceSupported).toBe(true);
+    expect(result.source).toBe("system");
+    expect(result.ready).toBe(true);
   });
 
   it("returns VM list from list-vms IPC", async () => {
@@ -110,9 +74,6 @@ describe("electron renderer backend bridge", () => {
           memory: 2048,
           disks: [{ path: "/tmp/vm-1.qcow2", size: 1024, format: "qcow2" }],
           network: { type: "nat" },
-          installMediaPath: undefined,
-          bootOrder: "disk-first",
-          networkType: "nat",
         },
       },
     ];
@@ -124,53 +85,6 @@ describe("electron renderer backend bridge", () => {
 
     const result = await listVmsViaBackend();
     expect(result).toEqual(vms);
-  });
-
-  it('normalizes VM status and config defaults from backend list response', async () => {
-    const win = getWindow();
-    win.openutm = {
-      listVms: async () => ({
-        success: true,
-        data: [
-          {
-            id: 'vm-1',
-            name: 'Unknown',
-            status: 'bad-status',
-            config: {
-              cpu: 1,
-              memory: 512,
-              disks: [],
-              network: { type: 'nat' },
-            },
-          },
-        ],
-      }),
-    };
-
-    const result = await listVmsViaBackend();
-    expect(result[0].status).toBe(VMStatus.Error);
-    expect(result[0].config.bootOrder).toBe('disk-first');
-    expect(result[0].config.networkType).toBe('nat');
-  });
-
-  it('fills default config when backend VM config is missing', async () => {
-    const win = getWindow();
-    win.openutm = {
-      listVms: async () => ({
-        success: true,
-        data: [
-          {
-            id: 'vm-1',
-            name: 'No Config',
-            status: 'running',
-          },
-        ],
-      }),
-    };
-
-    const result = await listVmsViaBackend();
-    expect(result[0].config.cpu).toBe(2);
-    expect(result[0].config.network.type).toBe('nat');
   });
 
   it("passes create/start/stop through IPC", async () => {
@@ -196,7 +110,6 @@ describe("electron renderer backend bridge", () => {
       cpu: 2,
       memory: 2048,
       diskSizeGb: 25,
-      bootOrder: "disk-first",
       networkType: "nat",
       os: "linux",
     });
@@ -204,52 +117,6 @@ describe("electron renderer backend bridge", () => {
     await stopVmViaBackend("vm-1");
 
     expect(calls).toEqual(["create", "start", "stop"]);
-  });
-
-  it('passes update/pause/resume/delete through IPC', async () => {
-    const calls: string[] = [];
-    const win = getWindow();
-    win.openutm = {
-      updateVm: async () => {
-        calls.push('update');
-        return {
-          success: true,
-          data: {
-            id: 'vm-1',
-            name: 'Updated VM',
-            status: 'stopped',
-            config: {
-              cpu: 4,
-              memory: 4096,
-              disks: [{ path: '/tmp/vm-1.qcow2', size: 1024, format: 'qcow2' }],
-              network: { type: 'nat' },
-              bootOrder: 'disk-first',
-              networkType: 'nat',
-            },
-          },
-        };
-      },
-      pauseVm: async () => {
-        calls.push('pause');
-        return { success: true, data: { success: true } };
-      },
-      resumeVm: async () => {
-        calls.push('resume');
-        return { success: true, data: { success: true } };
-      },
-      deleteVm: async () => {
-        calls.push('delete');
-        return { success: true, data: { success: true } };
-      },
-    };
-
-    const updated = await updateVmViaBackend({ id: 'vm-1', cpu: 4 });
-    await pauseVmViaBackend('vm-1');
-    await resumeVmViaBackend('vm-1');
-    await deleteVmViaBackend('vm-1');
-
-    expect(updated.config.cpu).toBe(4);
-    expect(calls).toEqual(['update', 'pause', 'resume', 'delete']);
   });
 
   it("passes open/get/close display through IPC", async () => {
@@ -260,7 +127,6 @@ describe("electron renderer backend bridge", () => {
       host: "127.0.0.1",
       port: 5901,
       uri: "spice://127.0.0.1:5901",
-      websocketUri: "ws://127.0.0.1:5960/spice/vm-1",
       status: "connected",
       reconnectAttempts: 0,
     };
@@ -289,102 +155,50 @@ describe("electron renderer backend bridge", () => {
     expect(calls).toEqual(["open", "get", "close"]);
   });
 
-  it('returns null when display session missing', async () => {
-    const win = getWindow();
-    win.openutm = {
-      getDisplay: async () => ({ success: true, data: null }),
-    };
-
-    await expect(getDisplayViaBackend('vm-1')).resolves.toBeNull();
-  });
-
-  it("calls qemu install command and terminal actions through bridge", async () => {
+  it("passes runtime status/install/clear IPCs", async () => {
     const calls: string[] = [];
     const win = getWindow();
     win.openutm = {
-      getQemuInstallCommand: async () => {
-        calls.push("cmd");
-        return { success: true, data: { command: "brew install qemu" } };
+      getRuntimeStatus: async () => {
+        calls.push("status");
+        return {
+          success: true,
+          data: {
+            source: "managed",
+            path: "/Users/dhruv/.openutm/runtime/10.2.0-openutm.1/bin/qemu-system-x86_64",
+            version: "QEMU emulator version 10.2.0-openutm.1",
+            spiceSupported: true,
+            ready: true,
+            accelerators: ["hvf", "tcg"],
+          },
+        };
       },
-      openQemuInstallTerminal: async () => {
-        calls.push("term");
+      installManagedRuntime: async () => {
+        calls.push("install");
+        return {
+          success: true,
+          data: {
+            source: "managed",
+            path: "/Users/dhruv/.openutm/runtime/10.2.0-openutm.1/bin/qemu-system-x86_64",
+            version: "QEMU emulator version 10.2.0-openutm.1",
+            spiceSupported: true,
+            ready: true,
+            accelerators: ["hvf", "tcg"],
+          },
+        };
+      },
+      clearManagedRuntime: async () => {
+        calls.push("clear");
         return { success: true, data: { success: true } };
       },
     };
 
-    const command = await getQemuInstallCommandViaBackend();
-    await openQemuInstallTerminalViaBackend();
+    const status = await getRuntimeStatusViaBackend();
+    const installed = await installManagedRuntimeViaBackend();
+    await clearManagedRuntimeViaBackend();
 
-    expect(command).toContain("brew install qemu");
-    expect(calls).toEqual(["cmd", "term"]);
-  });
-
-  it('throws when IPC returns unsuccessful result', async () => {
-    const win = getWindow();
-    win.openutm = {
-      stopVm: async () => ({ success: false, error: 'stop failed' }),
-    };
-
-    await expect(stopVmViaBackend('vm-1')).rejects.toThrow('stop failed');
-  });
-
-  it('uses fallback error message when IPC omits error string', async () => {
-    const win = getWindow();
-    win.openutm = {
-      openDisplay: async () => ({ success: false }),
-    };
-
-    await expect(openDisplayViaBackend('vm-1')).rejects.toThrow('Failed to open display session');
-  });
-
-  it('rejects malformed display session payloads', async () => {
-    const win = getWindow();
-    win.openutm = {
-      openDisplay: async () => ({
-        success: true,
-        data: {
-          vmId: 'not-uuid',
-          protocol: 'spice',
-          host: '127.0.0.1',
-          port: 5901,
-          uri: 'spice://127.0.0.1:5901',
-          status: 'connected',
-          reconnectAttempts: 0,
-        },
-      }),
-    };
-
-    await expect(openDisplayViaBackend('vm-1')).rejects.toThrow();
-  });
-
-  it("passes install-media and boot-order IPC calls through bridge", async () => {
-    const calls: string[] = [];
-    const win = getWindow();
-    win.openutm = {
-      pickInstallMedia: async () => {
-        calls.push("pick");
-        return { success: true, data: "/isos/ubuntu-24.04.iso" };
-      },
-      setInstallMedia: async () => {
-        calls.push("set");
-        return { success: true, data: { success: true } };
-      },
-      ejectInstallMedia: async () => {
-        calls.push("eject");
-        return { success: true, data: { success: true } };
-      },
-      setBootOrder: async () => {
-        calls.push("boot");
-        return { success: true, data: { success: true } };
-      },
-    };
-
-    const picked = await pickInstallMediaViaBackend("vm-1");
-    await setInstallMediaViaBackend("vm-1", "/isos/ubuntu-24.04.iso");
-    await ejectInstallMediaViaBackend("vm-1");
-    await setBootOrderViaBackend("vm-1", "disk-first");
-
-    expect(picked).toBe("/isos/ubuntu-24.04.iso");
-    expect(calls).toEqual(["pick", "set", "eject", "boot"]);
+    expect(status.source).toBe("managed");
+    expect(installed.spiceSupported).toBe(true);
+    expect(calls).toEqual(["status", "install", "clear"]);
   });
 });

@@ -1,7 +1,11 @@
-import { dialog, ipcMain } from 'electron';
-import { detectQemu } from './qemu/detector';
+import { ipcMain } from 'electron';
+import { detectQemu, getRuntimeStatus } from './qemu/detector';
 import { randomUUID } from 'crypto';
 import { VMStatus } from '@openutm/shared-types';
+import {
+  clearManagedRuntimeInstallation,
+  installManagedRuntime,
+} from './qemu/runtime-install';
 import {
   startVM,
   stopVM,
@@ -12,8 +16,6 @@ import {
   getDisplaySession,
   closeDisplaySession,
 } from './qemu/controller';
-import { closeSpiceProxy, ensureSpiceProxy, getSpiceProxyUri } from './qemu/spice-proxy';
-import { getQemuInstallCommand, openQemuInstallInTerminal } from './qemu/install';
 import { createVMConfig, deleteVMConfig, getVMConfig, listVMs, updateVMConfig } from './config';
 import { createDiskImage, deleteDiskImage } from './storage';
 
@@ -22,8 +24,6 @@ interface CreateVmRequest {
   cpu: number;
   memory: number;
   diskSizeGb: number;
-  installMediaPath?: string;
-  bootOrder: 'disk-first' | 'cdrom-first';
   networkType: 'nat' | 'bridge';
   os: 'linux' | 'windows' | 'macos' | 'other';
 }
@@ -41,20 +41,7 @@ interface StoredVmConfig {
   memory: number;
   cores: number;
   disk: string;
-  installMediaPath?: string;
-  bootOrder: 'disk-first' | 'cdrom-first';
-  networkType: 'nat' | 'bridge';
   qmpSocket?: string;
-}
-
-interface SetInstallMediaRequest {
-  id: string;
-  path: string;
-}
-
-interface SetBootOrderRequest {
-  id: string;
-  order: 'disk-first' | 'cdrom-first';
 }
 
 const DEFAULT_DISK_FALLBACK_BYTES = 25 * 1024 * 1024 * 1024;
@@ -82,11 +69,8 @@ function mapStoredConfigToVm(config: StoredVmConfig) {
         },
       ],
       network: {
-        type: config.networkType || 'nat',
+        type: 'nat' as const,
       },
-      installMediaPath: config.installMediaPath,
-      bootOrder: config.bootOrder || 'disk-first',
-      networkType: config.networkType || 'nat',
     },
   };
 }
@@ -102,18 +86,30 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('qemu-install-command', async () => {
+  ipcMain.handle('get-runtime-status', async () => {
     try {
-      return { success: true, data: { command: getQemuInstallCommand() } };
+      const status = await getRuntimeStatus();
+      return { success: true, data: status };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       return { success: false, error: message };
     }
   });
 
-  ipcMain.handle('qemu-install-terminal', async () => {
+  ipcMain.handle('install-managed-runtime', async () => {
     try {
-      const result = openQemuInstallInTerminal();
+      await installManagedRuntime();
+      const status = await getRuntimeStatus();
+      return { success: true, data: status };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return { success: false, error: message };
+    }
+  });
+
+  ipcMain.handle('clear-managed-runtime', async () => {
+    try {
+      const result = await clearManagedRuntimeInstallation();
       return { success: true, data: result };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -136,10 +132,8 @@ export function registerIpcHandlers() {
         memory: request.memory,
         cores: request.cpu,
         disk: disk.path,
-        installMediaPath: request.installMediaPath,
-        bootOrder: request.bootOrder || 'disk-first',
-        networkType: request.networkType || 'nat',
         qmpSocket,
+        accelerator: 'hvf',
       });
 
       return { success: true, data: mapStoredConfigToVm(stored) };
@@ -162,7 +156,6 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('stop-vm', async (_event, vmId: string) => {
     try {
-      await closeSpiceProxy(vmId);
       await stopVM(vmId);
       const result = { success: true };
       return { success: true, data: result };
@@ -249,7 +242,6 @@ export function registerIpcHandlers() {
       }
 
       if (getVmRuntimeStatus(vmId) !== 'stopped') {
-        await closeSpiceProxy(vmId);
         await stopVM(vmId);
       }
       await deleteDiskImage(existing.disk);
@@ -266,8 +258,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('open-display', async (_event, vmId: string) => {
     try {
       const session = await openDisplaySession(vmId);
-      const websocketUri = await ensureSpiceProxy(vmId, session.host, session.port);
-      return { success: true, data: { ...session, websocketUri } };
+      return { success: true, data: session };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       return { success: false, error: message };
@@ -277,11 +268,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('get-display', async (_event, vmId: string) => {
     try {
       const session = getDisplaySession(vmId);
-      if (!session) {
-        return { success: true, data: null };
-      }
-      const websocketUri = getSpiceProxyUri(vmId) || undefined;
-      return { success: true, data: { ...session, websocketUri } };
+      return { success: true, data: session };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       return { success: false, error: message };
@@ -290,88 +277,8 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('close-display', async (_event, vmId: string) => {
     try {
-      await closeSpiceProxy(vmId);
       const result = closeDisplaySession(vmId);
       return { success: true, data: result };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      return { success: false, error: message };
-    }
-  });
-
-  ipcMain.handle('pick-install-media', async (_event, _vmId?: string) => {
-    try {
-      const result = await dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [
-          { name: 'Install Media', extensions: ['iso', 'img'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-      });
-
-      if (result.canceled || !result.filePaths[0]) {
-        return { success: true, data: null };
-      }
-
-      return { success: true, data: result.filePaths[0] };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      return { success: false, error: message };
-    }
-  });
-
-  ipcMain.handle('set-install-media', async (_event, request: SetInstallMediaRequest) => {
-    try {
-      const existing = await getVMConfig(request.id);
-      if (!existing) {
-        return { success: false, error: `VM ${request.id} not found` };
-      }
-
-      await updateVMConfig(request.id, {
-        installMediaPath: request.path,
-      });
-
-      return { success: true, data: { success: true } };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      return { success: false, error: message };
-    }
-  });
-
-  ipcMain.handle('eject-install-media', async (_event, vmId: string) => {
-    try {
-      const existing = await getVMConfig(vmId);
-      if (!existing) {
-        return { success: false, error: `VM ${vmId} not found` };
-      }
-
-      await updateVMConfig(vmId, {
-        installMediaPath: undefined,
-      });
-
-      return { success: true, data: { success: true } };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      return { success: false, error: message };
-    }
-  });
-
-  ipcMain.handle('set-boot-order', async (_event, request: SetBootOrderRequest) => {
-    try {
-      if (request.order !== 'disk-first' && request.order !== 'cdrom-first') {
-        return { success: false, error: 'Invalid boot order' };
-      }
-
-      const existing = await getVMConfig(request.id);
-      if (!existing) {
-        return { success: false, error: `VM ${request.id} not found` };
-      }
-
-      await updateVMConfig(request.id, {
-        bootOrder: request.order,
-      });
-
-      return { success: true, data: { success: true } };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       return { success: false, error: message };
