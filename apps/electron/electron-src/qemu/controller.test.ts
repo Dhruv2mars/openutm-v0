@@ -67,6 +67,10 @@ const connectQMPMock = mock(async (socketPath: string) => {
   return mockQMPClient;
 });
 
+const ensureSpiceProxyMock = mock(async (vmId: string) => `ws://127.0.0.1:17345/spice/${vmId}`);
+const closeSpiceProxyMock = mock(async () => {});
+const closeAllSpiceProxiesMock = mock(async () => {});
+
 describe('VM Process Controller', () => {
   beforeEach(() => {
     controller.resetRuntimeStateForTests();
@@ -85,6 +89,14 @@ describe('VM Process Controller', () => {
       source: 'system',
       ready: true,
     })) as any);
+    controller.setSpiceProxyFnsForTests({
+      ensure: ensureSpiceProxyMock as any,
+      close: closeSpiceProxyMock as any,
+      closeAll: closeAllSpiceProxiesMock as any,
+    });
+    ensureSpiceProxyMock.mockClear?.();
+    closeSpiceProxyMock.mockClear?.();
+    closeAllSpiceProxiesMock.mockClear?.();
   });
 
   describe('startVM()', () => {
@@ -143,6 +155,28 @@ describe('VM Process Controller', () => {
       expect(args[spiceIndex + 1]).toContain('disable-ticketing=on');
       expect(args[spiceIndex + 1]).toContain('addr=127.0.0.1');
       expect(args[spiceIndex + 1]).toContain(`port=${controller.resolveSpicePort('vm-test-1')}`);
+      const bootIndex = args.indexOf('-boot');
+      expect(bootIndex).toBeGreaterThan(-1);
+      expect(args[bootIndex + 1]).toBe('order=cd,menu=on');
+    });
+
+    it('adds install media and cdrom-first boot order when configured', async () => {
+      await controller.startVM('vm-media', {
+        ...testConfigs['vm-test-1'],
+        id: 'vm-media',
+        installMediaPath: '/tmp/ubuntu.iso',
+        bootOrder: 'cdrom-first',
+      } as any);
+
+      const calls = (spawnMock as any).mock.calls;
+      const args = calls[calls.length - 1][1] as string[];
+      const mediaArg = args.find((arg) => arg.includes('media=cdrom'));
+      expect(mediaArg).toContain('/tmp/ubuntu.iso');
+      const bootIndex = args.indexOf('-boot');
+      expect(args[bootIndex + 1]).toBe('order=dc,menu=on');
+      const netdevIndex = args.indexOf('-netdev');
+      expect(netdevIndex).toBeGreaterThan(-1);
+      expect(args[netdevIndex + 1]).toContain('user,id=net0');
     });
 
     it('blocks VM start when active runtime is not SPICE-capable', async () => {
@@ -392,6 +426,7 @@ describe('VM Process Controller', () => {
       const session = await controller.openDisplaySession('vm-test-1');
       expect(session.vmId).toBe('vm-test-1');
       expect(session.uri).toContain('spice://127.0.0.1:');
+      expect(session.websocketUri).toContain('/spice/vm-test-1');
       expect(session.status).toBe(DisplaySessionStatus.Connected);
     });
 
@@ -405,7 +440,8 @@ describe('VM Process Controller', () => {
     it('marks session disconnected on close and reconnects with incremented attempts', async () => {
       await controller.startVM('vm-test-1', testConfigs['vm-test-1']);
       const first = await controller.openDisplaySession('vm-test-1');
-      controller.closeDisplaySession('vm-test-1');
+      await controller.closeDisplaySession('vm-test-1');
+      expect(closeSpiceProxyMock).toHaveBeenCalledWith('vm-test-1');
       const disconnected = controller.getDisplaySession('vm-test-1');
       expect(disconnected?.status).toBe(DisplaySessionStatus.Disconnected);
 

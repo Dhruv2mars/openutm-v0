@@ -1,3 +1,5 @@
 {
-  "vms": []
+  "vms": [],
+  "managedRuntimePath": "/Users/dhruv2mars/dev/github/openutm-v0/apps/electron/verification/cycle-1/config/runtime/versions/10.2.0-openutm-managed/bin/qemu-system-x86_64",
+  "managedRuntimeVersion": "10.2.0-openutm-managed"
 }

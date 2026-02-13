@@ -10,6 +10,20 @@ interface SpiceProxySession {
 }
 
 const sessions = new Map<string, SpiceProxySession>();
+type WebSocketServerFactory = (options: ConstructorParameters<typeof WebSocketServer>[0]) => WebSocketServer;
+let createWebSocketServer: WebSocketServerFactory = (options) => new WebSocketServer(options);
+
+export function setSpiceProxyDepsForTests(overrides: {
+  createWebSocketServer?: WebSocketServerFactory;
+}): void {
+  if (overrides.createWebSocketServer) {
+    createWebSocketServer = overrides.createWebSocketServer;
+  }
+}
+
+export function resetSpiceProxyDepsForTests(): void {
+  createWebSocketServer = (options) => new WebSocketServer(options);
+}
 
 function connectTcpSocket(ws: WebSocket, host: string, port: number): void {
   const tcp = net.createConnection({ host, port });
@@ -60,7 +74,7 @@ export async function ensureSpiceProxy(vmId: string, host: string, port: number)
   }
 
   const path = `/spice/${vmId}`;
-  const wss = new WebSocketServer({
+  const wss = createWebSocketServer({
     host: '127.0.0.1',
     port: 0,
     path,

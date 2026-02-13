@@ -30,7 +30,21 @@ import {
   startVmViaBackend,
   stopVmViaBackend,
   updateVmViaBackend,
+  getQemuInstallCommandViaBackend,
+  openQemuInstallTerminalViaBackend,
+  pickInstallMediaViaBackend,
+  setInstallMediaViaBackend,
+  ejectInstallMediaViaBackend,
+  setBootOrderViaBackend,
+  createSnapshotViaBackend,
+  listSnapshotsViaBackend,
+  restoreSnapshotViaBackend,
+  deleteSnapshotViaBackend,
+  cloneVmViaBackend,
+  exportVmViaBackend,
+  importVmViaBackend,
 } from './backend';
+import { SpiceViewer } from './spice-viewer';
 import './index.css';
 
 const vmStatusToListStatus = (status: VMStatus): VMListItem['status'] => {
@@ -287,6 +301,16 @@ function App() {
     }
   }, [addToast, checkQemu]);
 
+  const handleOpenQemuInstallTerminal = useCallback(async () => {
+    try {
+      const command = await getQemuInstallCommandViaBackend();
+      await openQemuInstallTerminalViaBackend();
+      addToast('info', `Install command opened in Terminal: ${command}`);
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to open QEMU install in Terminal');
+    }
+  }, [addToast]);
+
   const handleClearManagedRuntime = useCallback(async () => {
     try {
       await clearManagedRuntimeViaBackend();
@@ -311,6 +335,142 @@ function App() {
     },
     [addToast, syncDisplaySession]
   );
+
+  const handlePickInstallMedia = useCallback(
+    async (vmId: string) => {
+      try {
+        const path = await pickInstallMediaViaBackend(vmId);
+        if (!path) {
+          return;
+        }
+        await setInstallMediaViaBackend(vmId, path);
+        await setBootOrderViaBackend(vmId, 'cdrom-first');
+        await refreshVms();
+        addToast('success', 'Install media attached');
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to attach install media');
+      }
+    },
+    [addToast, refreshVms],
+  );
+
+  const handleEjectInstallMedia = useCallback(
+    async (vmId: string) => {
+      try {
+        await ejectInstallMediaViaBackend(vmId);
+        await setBootOrderViaBackend(vmId, 'disk-first');
+        await refreshVms();
+        addToast('info', 'Install media ejected');
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to eject install media');
+      }
+    },
+    [addToast, refreshVms],
+  );
+
+  const handleSetBootOrder = useCallback(
+    async (vmId: string, order: 'disk-first' | 'cdrom-first') => {
+      try {
+        await setBootOrderViaBackend(vmId, order);
+        await refreshVms();
+        addToast('info', `Boot order set: ${order}`);
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to update boot order');
+      }
+    },
+    [addToast, refreshVms],
+  );
+
+  const handleCloneVm = useCallback(async () => {
+    if (!selectedVm) return;
+    try {
+      const cloned = await cloneVmViaBackend(selectedVm.id, `${selectedVm.name} Copy`);
+      await refreshVms();
+      setSelectedId(cloned.id);
+      addToast('success', `Cloned ${selectedVm.name}`);
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to clone VM');
+    }
+  }, [addToast, refreshVms, selectedVm]);
+
+  const handleExportVm = useCallback(async () => {
+    if (!selectedVm) return;
+    try {
+      const result = await exportVmViaBackend(selectedVm.id);
+      if ('canceled' in result) {
+        addToast('info', 'Export canceled');
+        return;
+      }
+      addToast('success', `Exported VM to ${result.path}`);
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to export VM');
+    }
+  }, [addToast, selectedVm]);
+
+  const handleImportVm = useCallback(async () => {
+    try {
+      const result = await importVmViaBackend();
+      if ('canceled' in result) {
+        addToast('info', 'Import canceled');
+        return;
+      }
+      await refreshVms();
+      setSelectedId(result.id);
+      addToast('success', `Imported ${result.name}`);
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to import VM');
+    }
+  }, [addToast, refreshVms]);
+
+  const handleCreateSnapshot = useCallback(async () => {
+    if (!selectedVm) return;
+    const name = window.prompt('Snapshot name');
+    if (!name) return;
+    try {
+      await createSnapshotViaBackend(selectedVm.id, name);
+      addToast('success', `Snapshot created: ${name}`);
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to create snapshot');
+    }
+  }, [addToast, selectedVm]);
+
+  const handleRestoreSnapshot = useCallback(async () => {
+    if (!selectedVm) return;
+    try {
+      const snapshots = await listSnapshotsViaBackend(selectedVm.id);
+      if (snapshots.length === 0) {
+        addToast('info', 'No snapshots found');
+        return;
+      }
+      const name = window.prompt(
+        `Snapshot to restore (${snapshots.map((snapshot) => snapshot.name).join(', ')})`,
+      );
+      if (!name) return;
+      await restoreSnapshotViaBackend(selectedVm.id, name);
+      addToast('success', `Snapshot restored: ${name}`);
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to restore snapshot');
+    }
+  }, [addToast, selectedVm]);
+
+  const handleDeleteSnapshot = useCallback(async () => {
+    if (!selectedVm) return;
+    try {
+      const snapshots = await listSnapshotsViaBackend(selectedVm.id);
+      if (snapshots.length === 0) {
+        addToast('info', 'No snapshots found');
+        return;
+      }
+      const name = window.prompt(
+        `Snapshot to delete (${snapshots.map((snapshot) => snapshot.name).join(', ')})`,
+      );
+      if (!name) return;
+      await deleteSnapshotViaBackend(selectedVm.id, name);
+      addToast('success', `Snapshot deleted: ${name}`);
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to delete snapshot');
+    }
+  }, [addToast, selectedVm]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -351,6 +511,8 @@ function App() {
           diskSizeGb: wizardConfig.disk,
           networkType: wizardConfig.network === 'user' ? 'nat' : 'bridge',
           os: wizardConfig.os,
+          installMediaPath: wizardConfig.installMediaPath,
+          bootOrder: wizardConfig.installMediaPath ? 'cdrom-first' : 'disk-first',
         });
 
         setShowWizard(false);
@@ -381,6 +543,7 @@ function App() {
         <QemuSetupWizard
           detectionResult={qemuResult}
           installSuggestion={DEFAULT_INSTALL_SUGGESTION}
+          onInstallViaHomebrew={() => handleOpenQemuInstallTerminal()}
           onRetry={() => void checkQemu()}
           onSkip={() => {
             setAppState('ready');
@@ -452,14 +615,64 @@ function App() {
     >
       <div className="space-y-4">
         {runtimeBanner}
+        <div className="rounded-lg border border-gray-200 bg-white p-3">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => void handleImportVm()}>
+              Import VM
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void handleCloneVm()}
+              disabled={!selectedVm || selectedVm.status !== VMStatus.Stopped}
+            >
+              Clone VM
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void handleExportVm()}
+              disabled={!selectedVm || selectedVm.status !== VMStatus.Stopped}
+            >
+              Export VM
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => void handleCreateSnapshot()}
+              disabled={!selectedVm || selectedVm.status !== VMStatus.Stopped}
+            >
+              Create Snapshot
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => void handleRestoreSnapshot()}
+              disabled={!selectedVm || selectedVm.status !== VMStatus.Stopped}
+            >
+              Restore Snapshot
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => void handleDeleteSnapshot()}
+              disabled={!selectedVm || selectedVm.status !== VMStatus.Stopped}
+            >
+              Delete Snapshot
+            </Button>
+          </div>
+        </div>
         {showWizard ? (
-          <VMWizard onComplete={handleWizardComplete} onCancel={() => setShowWizard(false)} />
+          <VMWizard
+            onComplete={handleWizardComplete}
+            onCancel={() => setShowWizard(false)}
+            onPickInstallMedia={() => pickInstallMediaViaBackend()}
+          />
         ) : selectedVm ? (
           <VMDetailView
             vm={selectedVm}
             displaySession={selectedDisplay}
+            displayViewer={selectedDisplay ? <SpiceViewer session={selectedDisplay} /> : undefined}
             onOpenDisplay={(id) => void handleOpenDisplay(id)}
             onCloseDisplay={(id) => void handleCloseDisplay(id)}
+            onPickInstallMedia={(id) => void handlePickInstallMedia(id)}
+            onEjectInstallMedia={(id) => void handleEjectInstallMedia(id)}
+            onSetBootOrder={(id, order) => void handleSetBootOrder(id, order)}
             onUpdateConfig={handleUpdateConfig}
             onAction={handleAction}
             onDelete={handleDelete}

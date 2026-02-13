@@ -14,7 +14,12 @@ export interface VMDetailViewProps {
   onDelete: (id: string) => void;
   onOpenDisplay?: (id: string) => void;
   onCloseDisplay?: (id: string) => void;
+  onPickInstallMedia?: (id: string) => void;
+  onEjectInstallMedia?: (id: string) => void;
+  onSetBootOrder?: (id: string, order: 'disk-first' | 'cdrom-first') => void;
   displaySession?: DisplaySession | null;
+  displayViewer?: React.ReactNode;
+  displayBody?: React.ReactNode;
   disableStart?: boolean;
   disableStartReason?: string;
   disableDisplayOpen?: boolean;
@@ -31,7 +36,12 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
   onDelete,
   onOpenDisplay,
   onCloseDisplay,
+  onPickInstallMedia,
+  onEjectInstallMedia,
+  onSetBootOrder,
   displaySession = null,
+  displayViewer,
+  displayBody,
   disableStart = false,
   disableStartReason,
   disableDisplayOpen = false,
@@ -109,6 +119,48 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
           <p className="text-sm text-gray-500">{(disk.size / 1024 / 1024 / 1024).toFixed(1)} GB ({disk.format})</p>
         </div>
       ))}
+      <div className="p-3 border rounded-lg space-y-3">
+        <p className="font-medium">Install Media</p>
+        <p className="text-sm text-gray-500 break-all">
+          {vm.config.installMediaPath || 'No install media attached'}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => onPickInstallMedia?.(vm.id)}
+            disabled={vm.status !== VMStatus.Stopped}
+          >
+            Pick ISO
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => onEjectInstallMedia?.(vm.id)}
+            disabled={vm.status !== VMStatus.Stopped || !vm.config.installMediaPath}
+          >
+            Eject ISO
+          </Button>
+        </div>
+      </div>
+      <div className="p-3 border rounded-lg space-y-3">
+        <p className="font-medium">Boot Order</p>
+        <p className="text-sm text-gray-500">Current: {vm.config.bootOrder}</p>
+        <div className="flex gap-2">
+          <Button
+            variant={vm.config.bootOrder === 'disk-first' ? 'primary' : 'secondary'}
+            onClick={() => onSetBootOrder?.(vm.id, 'disk-first')}
+            disabled={vm.status !== VMStatus.Stopped}
+          >
+            Boot Disk First
+          </Button>
+          <Button
+            variant={vm.config.bootOrder === 'cdrom-first' ? 'primary' : 'secondary'}
+            onClick={() => onSetBootOrder?.(vm.id, 'cdrom-first')}
+            disabled={vm.status !== VMStatus.Stopped || !vm.config.installMediaPath}
+          >
+            Boot ISO First
+          </Button>
+        </div>
+      </div>
     </div>
   );
 
@@ -129,6 +181,7 @@ export const VMDetailView: React.FC<VMDetailViewProps> = ({
         disabled={disableDisplayOpen}
         disabledReason={disableDisplayOpenReason}
       />
+      {displayViewer || displayBody}
       {displaySession ? (
         <div className="p-3 border rounded-lg space-y-2">
           <p className="font-medium">Session</p>

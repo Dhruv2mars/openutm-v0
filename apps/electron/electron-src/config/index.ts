@@ -9,6 +9,9 @@ interface VMConfigData {
   disk: string;
   qmpSocket?: string;
   accelerator?: string;
+  installMediaPath?: string;
+  bootOrder?: 'disk-first' | 'cdrom-first';
+  networkType?: 'nat' | 'bridge';
   createdAt: number;
   updatedAt: number;
 }

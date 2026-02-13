@@ -12,9 +12,14 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src electron-src scripts vite.config.ts electron-env.d.ts --ext .ts,.tsx,.mjs --max-warnings=0",
     "test": "bun test",
+    "coverage": "node scripts/coverage.mjs",
+    "verify:release": "bun run lint && bun run typecheck && bun run test && bun run coverage && bun run build && bun run pack:universal && node scripts/check-package.mjs --arch universal",
     "verify:workflow": "node scripts/verify-workflow.mjs",
-    "pack": "bun run build && electron-builder --dir",
-    "dist": "bun run build && electron-builder"
+    "pack": "bun run pack:arm64",
+    "pack:arm64": "bun run build && electron-builder --dir --mac --arm64",
+    "pack:x64": "bun run build && electron-builder --dir --mac --x64",
+    "pack:universal": "bun run build && electron-builder --dir --mac --universal",
+    "dist": "bun run build && electron-builder --mac --universal"
   },
   "build": {
     "appId": "com.openutm.electron",
@@ -42,11 +47,11 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": ["universal"]
         },
         {
           "target": "zip",
-          "arch": ["arm64"]
+          "arch": ["universal"]
         }
       ],
       "minimumSystemVersion": "12.0"
