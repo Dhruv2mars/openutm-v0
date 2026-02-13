@@ -5,15 +5,24 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { resetDetectorDepsForTests, setDetectorDepsForTests } from './qemu/detector';
 import { resetRuntimeInstallDepsForTests, setRuntimeInstallDepsForTests } from './qemu/runtime-install';
+import { setSpawnSyncFnForTests } from './qemu/install';
+import { createVMConfig, getVMConfig } from './config';
+import { resetVmArtifactsDepsForTests, setVmArtifactsDepsForTests } from './vm-artifacts';
 
 const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
 const ipcHandleMock = mock((channel: string, handler: (...args: unknown[]) => Promise<unknown>) => {
   handlers.set(channel, handler);
 });
+const showOpenDialogMock = mock(async () => ({ canceled: false, filePaths: ['/tmp/ubuntu.iso'] }));
+const showSaveDialogMock = mock(async () => ({ canceled: false, filePath: '/tmp/export.openutmvm' }));
 
 mock.module('electron', () => ({
   ipcMain: {
     handle: ipcHandleMock,
+  },
+  dialog: {
+    showOpenDialog: showOpenDialogMock,
+    showSaveDialog: showSaveDialogMock,
   },
 }));
 
@@ -76,11 +85,58 @@ describe('ipc handlers runtime controls', () => {
       }) as any,
       randomUUID: () => 'runtime-test',
     });
+    showOpenDialogMock.mockResolvedValue({ canceled: false, filePaths: ['/tmp/ubuntu.iso'] });
+    showSaveDialogMock.mockResolvedValue({ canceled: false, filePath: '/tmp/export.openutmvm' });
+    let nextId = 0;
+    setSpawnSyncFnForTests(
+      ((cmd: string) => {
+        if (cmd === 'osascript') {
+          return { status: 0, stdout: '', stderr: '' };
+        }
+        return { status: 0, stdout: '', stderr: '' };
+      }) as any,
+    );
+    setVmArtifactsDepsForTests({
+      randomUUID: () => {
+        nextId += 1;
+        return `generated-vm-id-${nextId}`;
+      },
+      mkdtempSync: () => '/tmp/openutm-stage',
+      copyFileSync: (() => {}) as any,
+      mkdirSync: (() => {}) as any,
+      writeFileSync: (() => {}) as any,
+      readFileSync: (() =>
+        JSON.stringify({
+          version: 1,
+          vm: {
+            name: 'Imported VM',
+            memory: 2048,
+            cores: 2,
+            accelerator: 'hvf',
+            bootOrder: 'disk-first',
+            networkType: 'nat',
+          },
+          diskFile: 'disk.qcow2',
+        })) as any,
+      rmSync: (() => {}) as any,
+      spawnSync: ((cmd: string, args: string[]) => {
+        if (cmd.endsWith('qemu-img') && args[0] === 'snapshot' && args[1] === '-l') {
+          return {
+            status: 0,
+            stdout:
+              'Snapshot list:\nID        TAG                VM SIZE                DATE       VM CLOCK\n1         clean-install      0 B                    2026-02-13 00:00:00\n',
+            stderr: '',
+          };
+        }
+        return { status: 0, stdout: '', stderr: '' };
+      }) as any,
+    });
   });
 
   afterEach(() => {
     resetDetectorDepsForTests();
     resetRuntimeInstallDepsForTests();
+    resetVmArtifactsDepsForTests();
     delete process.env.OPENUTM_CONFIG_DIR;
     if (configDir) {
       rmSync(configDir, { recursive: true, force: true });
@@ -92,6 +148,19 @@ describe('ipc handlers runtime controls', () => {
     expect(handlers.has('get-runtime-status')).toBe(true);
     expect(handlers.has('install-managed-runtime')).toBe(true);
     expect(handlers.has('clear-managed-runtime')).toBe(true);
+    expect(handlers.has('qemu-install-command')).toBe(true);
+    expect(handlers.has('qemu-install-terminal')).toBe(true);
+    expect(handlers.has('pick-install-media')).toBe(true);
+    expect(handlers.has('set-install-media')).toBe(true);
+    expect(handlers.has('eject-install-media')).toBe(true);
+    expect(handlers.has('set-boot-order')).toBe(true);
+    expect(handlers.has('snapshot-create')).toBe(true);
+    expect(handlers.has('snapshot-list')).toBe(true);
+    expect(handlers.has('snapshot-restore')).toBe(true);
+    expect(handlers.has('snapshot-delete')).toBe(true);
+    expect(handlers.has('clone-vm')).toBe(true);
+    expect(handlers.has('export-vm')).toBe(true);
+    expect(handlers.has('import-vm')).toBe(true);
   });
 
   it('returns runtime status payload', async () => {
@@ -130,5 +199,118 @@ describe('ipc handlers runtime controls', () => {
     const clearHandler = handlers.get('clear-managed-runtime');
     const result = await clearHandler!(undefined);
     expect(result).toEqual({ success: true, data: { success: true } });
+  });
+
+  it('returns qemu install command + opens terminal', async () => {
+    registerIpcHandlers();
+    const command = await handlers.get('qemu-install-command')!(undefined);
+    expect((command as any).success).toBe(true);
+    expect((command as any).data).toContain('brew install qemu');
+
+    const terminal = await handlers.get('qemu-install-terminal')!(undefined);
+    expect((terminal as any).success).toBe(true);
+  });
+
+  it('picks install media path', async () => {
+    registerIpcHandlers();
+    const result = await handlers.get('pick-install-media')!(undefined);
+    expect((result as any)).toEqual({ success: true, data: '/tmp/ubuntu.iso' });
+    expect(showOpenDialogMock).toHaveBeenCalled();
+  });
+
+  it('sets/ejects install media and updates boot order', async () => {
+    registerIpcHandlers();
+    await createVMConfig({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      name: 'ubuntu-vm',
+      memory: 2048,
+      cores: 2,
+      disk: '/tmp/vm.qcow2',
+    });
+
+    const setMedia = await handlers.get('set-install-media')!(undefined, {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      path: '/tmp/ubuntu.iso',
+    });
+    expect((setMedia as any).success).toBe(true);
+
+    const setBoot = await handlers.get('set-boot-order')!(undefined, {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      order: 'cdrom-first',
+    });
+    expect((setBoot as any).success).toBe(true);
+
+    let vm = await getVMConfig('550e8400-e29b-41d4-a716-446655440000');
+    expect(vm?.installMediaPath).toBe('/tmp/ubuntu.iso');
+    expect(vm?.bootOrder).toBe('cdrom-first');
+
+    const eject = await handlers.get('eject-install-media')!(undefined, '550e8400-e29b-41d4-a716-446655440000');
+    expect((eject as any).success).toBe(true);
+    vm = await getVMConfig('550e8400-e29b-41d4-a716-446655440000');
+    expect(vm?.installMediaPath).toBeUndefined();
+  });
+
+  it('handles snapshot lifecycle endpoints', async () => {
+    registerIpcHandlers();
+    await createVMConfig({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      name: 'ubuntu-vm',
+      memory: 2048,
+      cores: 2,
+      disk: '/tmp/vm.qcow2',
+    });
+
+    const created = await handlers.get('snapshot-create')!(undefined, {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      name: 'clean-install',
+    });
+    expect((created as any).success).toBe(true);
+
+    const listed = await handlers.get('snapshot-list')!(undefined, '550e8400-e29b-41d4-a716-446655440000');
+    expect((listed as any).success).toBe(true);
+    expect((listed as any).data).toHaveLength(1);
+
+    const restored = await handlers.get('snapshot-restore')!(undefined, {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      name: 'clean-install',
+    });
+    expect((restored as any).success).toBe(true);
+
+    const deleted = await handlers.get('snapshot-delete')!(undefined, {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      name: 'clean-install',
+    });
+    expect((deleted as any).success).toBe(true);
+  });
+
+  it('clones vm and imports/exports vm archive', async () => {
+    registerIpcHandlers();
+    await createVMConfig({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      name: 'ubuntu-vm',
+      memory: 2048,
+      cores: 2,
+      disk: '/tmp/vm.qcow2',
+    });
+
+    const cloned = await handlers.get('clone-vm')!(undefined, {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      name: 'ubuntu-vm-clone',
+    });
+    expect((cloned as any).success).toBe(true);
+    expect((cloned as any).data.name).toBe('ubuntu-vm-clone');
+
+    const exported = await handlers.get('export-vm')!(undefined, {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      path: '/tmp/export.openutmvm',
+    });
+    expect((exported as any).success).toBe(true);
+    expect((exported as any).data.path).toBe('/tmp/export.openutmvm');
+
+    const imported = await handlers.get('import-vm')!(undefined, {
+      path: '/tmp/export.openutmvm',
+    });
+    expect((imported as any).success).toBe(true);
+    expect((imported as any).data.name).toContain('Imported');
   });
 });

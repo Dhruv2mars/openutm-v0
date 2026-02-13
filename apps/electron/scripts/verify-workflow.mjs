@@ -351,6 +351,9 @@ async function runCycle(cycle, manifestUrl) {
 
   let cdp;
   let vmId = null;
+  let createdVmId = null;
+  let clonedVmId = null;
+  let importedVmId = null;
   try {
     console.log(`cycle ${cycle}: waiting-for-target`);
     const target = await waitForTarget(port);
@@ -410,7 +413,53 @@ async function runCycle(cycle, manifestUrl) {
     if (!vmId) {
       throw new Error('vm id missing');
     }
+    createdVmId = vmId;
     console.log(`cycle ${cycle}: vm-created ${vmId}`);
+
+    const snapshotName = `cycle-${cycle}-baseline`;
+    unwrapIpc(
+      await bridgeCall(cdp, 'createSnapshot', [vmId, snapshotName], `cycle ${cycle} snapshot-create`),
+      'snapshot-create',
+    );
+    const snapshots = unwrapIpc(
+      await bridgeCall(cdp, 'listSnapshots', [vmId], `cycle ${cycle} snapshot-list`),
+      'snapshot-list',
+    );
+    if (!Array.isArray(snapshots) || !snapshots.some((entry) => entry?.name === snapshotName)) {
+      throw new Error('snapshot create/list verification failed');
+    }
+    unwrapIpc(
+      await bridgeCall(cdp, 'restoreSnapshot', [vmId, snapshotName], `cycle ${cycle} snapshot-restore`),
+      'snapshot-restore',
+    );
+
+    const exportPath = path.join(cycleDir, `${vmId}.openutmvm`);
+    const exported = unwrapIpc(
+      await bridgeCall(cdp, 'exportVm', [vmId, exportPath], `cycle ${cycle} export-vm`),
+      'export-vm',
+    );
+    if (!exported?.success || exported.path !== exportPath) {
+      throw new Error('export verification failed');
+    }
+
+    const cloned = unwrapIpc(
+      await bridgeCall(cdp, 'cloneVm', [vmId, `verification-clone-${cycle}`], `cycle ${cycle} clone-vm`),
+      'clone-vm',
+    );
+    clonedVmId = cloned?.id;
+    if (!clonedVmId) {
+      throw new Error('clone verification failed');
+    }
+
+    const imported = unwrapIpc(
+      await bridgeCall(cdp, 'importVm', [exportPath], `cycle ${cycle} import-vm`),
+      'import-vm',
+    );
+    importedVmId = imported?.id;
+    if (!importedVmId) {
+      throw new Error('import verification failed');
+    }
+    console.log(`cycle ${cycle}: artifacts verified`);
 
     unwrapIpc(await bridgeCall(cdp, 'startVm', [vmId], `cycle ${cycle} start-vm`), 'start-vm');
     console.log(`cycle ${cycle}: vm-start requested`);
@@ -436,7 +485,22 @@ async function runCycle(cycle, manifestUrl) {
     await waitForVmStatus(cdp, vmId, 'stopped', `cycle ${cycle} wait-stopped`);
     console.log(`cycle ${cycle}: vm-stopped`);
     unwrapIpc(await bridgeCall(cdp, 'deleteVm', [vmId], `cycle ${cycle} delete-vm`), 'delete-vm');
-    const remaining = await waitForVmDeleted(cdp, vmId, `cycle ${cycle} wait-delete`);
+    await waitForVmDeleted(cdp, vmId, `cycle ${cycle} wait-delete`);
+    vmId = null;
+    if (clonedVmId) {
+      unwrapIpc(await bridgeCall(cdp, 'deleteVm', [clonedVmId], `cycle ${cycle} delete-clone-vm`), 'delete-vm');
+      await waitForVmDeleted(cdp, clonedVmId, `cycle ${cycle} wait-delete-clone`);
+      clonedVmId = null;
+    }
+    if (importedVmId) {
+      unwrapIpc(await bridgeCall(cdp, 'deleteVm', [importedVmId], `cycle ${cycle} delete-imported-vm`), 'delete-vm');
+      await waitForVmDeleted(cdp, importedVmId, `cycle ${cycle} wait-delete-imported`);
+      importedVmId = null;
+    }
+    const remaining = unwrapIpc(await bridgeCall(cdp, 'listVms', [], `cycle ${cycle} list-vms-final`), 'list-vms');
+    if ((remaining || []).length !== 0) {
+      throw new Error(`expected no remaining VMs, found ${(remaining || []).length}`);
+    }
     console.log(`cycle ${cycle}: vm-deleted`);
 
     const result = {
@@ -444,7 +508,7 @@ async function runCycle(cycle, manifestUrl) {
       status: 'PASSED',
       startedAt,
       completedAt: new Date().toISOString(),
-      vmId,
+      vmId: createdVmId,
       qemuPath: detect.path,
       qemuVersion: detect.version,
       runtimeSource: detect.source,
@@ -463,11 +527,21 @@ async function runCycle(cycle, manifestUrl) {
       failedAt: new Date().toISOString(),
       error: error instanceof Error ? error.message : String(error),
       logPath,
-      vmId,
+      vmId: createdVmId,
     };
     writeFileSync(path.join(cycleDir, 'result.json'), JSON.stringify(failed, null, 2));
     throw error;
   } finally {
+    if (cdp) {
+      for (const id of [vmId, clonedVmId, importedVmId]) {
+        if (!id) continue;
+        try {
+          await bridgeCall(cdp, 'deleteVm', [id], `cycle ${cycle} cleanup-delete-vm`, 10000);
+        } catch {
+          // noop
+        }
+      }
+    }
     if (cdp) {
       try {
         await withTimeout(cdp.close(), `cycle ${cycle} cdp-close`, 3000);

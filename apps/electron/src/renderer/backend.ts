@@ -39,6 +39,8 @@ export interface CreateVmRequest {
   diskSizeGb: number;
   networkType: "nat" | "bridge";
   os: "linux" | "windows" | "macos" | "other";
+  installMediaPath?: string | null;
+  bootOrder?: "disk-first" | "cdrom-first";
 }
 
 export interface UpdateVmRequest {
@@ -48,11 +50,34 @@ export interface UpdateVmRequest {
   memory?: number;
 }
 
+export interface SnapshotInfo {
+  name: string;
+  id?: string;
+  vmSize?: string;
+  date?: string;
+}
+
 interface ElectronBridge {
   detectQemu: () => Promise<IpcResult<DetectQemuPayload>>;
   getRuntimeStatus: () => Promise<IpcResult<RuntimeStatus>>;
   installManagedRuntime: () => Promise<IpcResult<RuntimeStatus>>;
   clearManagedRuntime: () => Promise<IpcResult<{ success: boolean }>>;
+  getQemuInstallCommand: () => Promise<IpcResult<string>>;
+  openQemuInstallTerminal: () => Promise<IpcResult<{ success: boolean }>>;
+  pickInstallMedia: (id?: string) => Promise<IpcResult<string | null>>;
+  setInstallMedia: (id: string, path: string) => Promise<IpcResult<{ success: boolean }>>;
+  ejectInstallMedia: (id: string) => Promise<IpcResult<{ success: boolean }>>;
+  setBootOrder: (
+    id: string,
+    order: "disk-first" | "cdrom-first",
+  ) => Promise<IpcResult<{ success: boolean }>>;
+  createSnapshot: (id: string, name: string) => Promise<IpcResult<{ success: boolean }>>;
+  listSnapshots: (id: string) => Promise<IpcResult<SnapshotInfo[]>>;
+  restoreSnapshot: (id: string, name: string) => Promise<IpcResult<{ success: boolean }>>;
+  deleteSnapshot: (id: string, name: string) => Promise<IpcResult<{ success: boolean }>>;
+  cloneVm: (id: string, name?: string) => Promise<IpcResult<VM>>;
+  exportVm: (id: string, path?: string) => Promise<IpcResult<{ success: boolean; path: string } | { canceled: true }>>;
+  importVm: (path?: string) => Promise<IpcResult<VM | { canceled: true }>>;
   listVms: () => Promise<IpcResult<VM[]>>;
   createVm: (request: CreateVmRequest) => Promise<IpcResult<VM>>;
   updateVm: (request: UpdateVmRequest) => Promise<IpcResult<VM>>;
@@ -145,6 +170,79 @@ export async function installManagedRuntimeViaBackend(): Promise<RuntimeStatus> 
 export async function clearManagedRuntimeViaBackend(): Promise<void> {
   const bridge = getBridge();
   unwrapResult(await bridge.clearManagedRuntime(), "Failed to clear managed runtime");
+}
+
+export async function getQemuInstallCommandViaBackend(): Promise<string> {
+  const bridge = getBridge();
+  return unwrapResult(await bridge.getQemuInstallCommand(), "Failed to get QEMU install command");
+}
+
+export async function openQemuInstallTerminalViaBackend(): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.openQemuInstallTerminal(), "Failed to open Terminal install command");
+}
+
+export async function pickInstallMediaViaBackend(vmId?: string): Promise<string | null> {
+  const bridge = getBridge();
+  return unwrapResult(await bridge.pickInstallMedia(vmId), "Failed to pick install media");
+}
+
+export async function setInstallMediaViaBackend(vmId: string, mediaPath: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.setInstallMedia(vmId, mediaPath), "Failed to set install media");
+}
+
+export async function ejectInstallMediaViaBackend(vmId: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.ejectInstallMedia(vmId), "Failed to eject install media");
+}
+
+export async function setBootOrderViaBackend(vmId: string, order: "disk-first" | "cdrom-first"): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.setBootOrder(vmId, order), "Failed to set boot order");
+}
+
+export async function createSnapshotViaBackend(vmId: string, name: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.createSnapshot(vmId, name), "Failed to create snapshot");
+}
+
+export async function listSnapshotsViaBackend(vmId: string): Promise<SnapshotInfo[]> {
+  const bridge = getBridge();
+  return unwrapResult(await bridge.listSnapshots(vmId), "Failed to list snapshots");
+}
+
+export async function restoreSnapshotViaBackend(vmId: string, name: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.restoreSnapshot(vmId, name), "Failed to restore snapshot");
+}
+
+export async function deleteSnapshotViaBackend(vmId: string, name: string): Promise<void> {
+  const bridge = getBridge();
+  unwrapResult(await bridge.deleteSnapshot(vmId, name), "Failed to delete snapshot");
+}
+
+export async function cloneVmViaBackend(vmId: string, name?: string): Promise<VM> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.cloneVm(vmId, name), "Failed to clone VM");
+  return normalizeVm(data);
+}
+
+export async function exportVmViaBackend(
+  vmId: string,
+  path?: string,
+): Promise<{ success: boolean; path: string } | { canceled: true }> {
+  const bridge = getBridge();
+  return unwrapResult(await bridge.exportVm(vmId, path), "Failed to export VM");
+}
+
+export async function importVmViaBackend(path?: string): Promise<VM | { canceled: true }> {
+  const bridge = getBridge();
+  const data = unwrapResult(await bridge.importVm(path), "Failed to import VM");
+  if ('canceled' in data) {
+    return data;
+  }
+  return normalizeVm(data);
 }
 
 export async function listVmsViaBackend(): Promise<VM[]> {

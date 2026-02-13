@@ -23,6 +23,13 @@ declare global {
       setInstallMedia: (id: string, path: string) => Promise<unknown>;
       ejectInstallMedia: (id: string) => Promise<unknown>;
       setBootOrder: (id: string, order: "disk-first" | "cdrom-first") => Promise<unknown>;
+      createSnapshot: (id: string, name: string) => Promise<unknown>;
+      listSnapshots: (id: string) => Promise<unknown>;
+      restoreSnapshot: (id: string, name: string) => Promise<unknown>;
+      deleteSnapshot: (id: string, name: string) => Promise<unknown>;
+      cloneVm: (id: string, name?: string) => Promise<unknown>;
+      exportVm: (id: string, path?: string) => Promise<unknown>;
+      importVm: (path?: string) => Promise<unknown>;
     };
   }
 }

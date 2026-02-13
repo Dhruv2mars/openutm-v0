@@ -23,4 +23,11 @@ contextBridge.exposeInMainWorld('openutm', {
   setInstallMedia: (id: string, path: string) => ipcRenderer.invoke('set-install-media', { id, path }),
   ejectInstallMedia: (id: string) => ipcRenderer.invoke('eject-install-media', id),
   setBootOrder: (id: string, order: 'disk-first' | 'cdrom-first') => ipcRenderer.invoke('set-boot-order', { id, order }),
+  createSnapshot: (id: string, name: string) => ipcRenderer.invoke('snapshot-create', { id, name }),
+  listSnapshots: (id: string) => ipcRenderer.invoke('snapshot-list', id),
+  restoreSnapshot: (id: string, name: string) => ipcRenderer.invoke('snapshot-restore', { id, name }),
+  deleteSnapshot: (id: string, name: string) => ipcRenderer.invoke('snapshot-delete', { id, name }),
+  cloneVm: (id: string, name?: string) => ipcRenderer.invoke('clone-vm', { id, name }),
+  exportVm: (id: string, path?: string) => ipcRenderer.invoke('export-vm', { id, path }),
+  importVm: (path?: string) => ipcRenderer.invoke('import-vm', { path }),
 });

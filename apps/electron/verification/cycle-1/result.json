@@ -1,9 +1,15 @@
 {
   "cycle": 1,
-  "status": "FAILED",
-  "error": "display endpoint text missing",
+  "status": "PASSED",
+  "startedAt": "2026-02-13T09:10:39.061Z",
+  "completedAt": "2026-02-13T09:10:43.445Z",
+  "vmId": "83b9d977-e947-4fca-97e4-d36375d79cf9",
+  "qemuPath": "/Users/dhruv2mars/dev/github/openutm-v0/apps/electron/verification/cycle-1/config/runtime/versions/10.2.0-openutm-managed/bin/qemu-system-x86_64",
+  "qemuVersion": "QEMU emulator version 10.2.0-openutm-managed",
+  "runtimeSource": "managed",
+  "spiceSupported": true,
+  "screenshotPath": "/Users/dhruv2mars/dev/github/openutm-v0/apps/electron/verification/cycle-1/display.png",
+  "screenshotFallback": false,
   "logPath": "/Users/dhruv2mars/dev/github/openutm-v0/apps/electron/verification/cycle-1/app.log",
-  "partialStartResult": null,
-  "partialEndResult": null,
-  "failedAt": "2026-02-06T12:53:55.576Z"
+  "remainingVms": 0
 }

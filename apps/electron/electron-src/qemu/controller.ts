@@ -3,6 +3,11 @@ import { DisplayProtocol, DisplaySessionStatus, type DisplaySession } from '@ope
 import { getVMConfig } from '../config';
 import { connectQMP as defaultConnectQMP } from './qmp';
 import { detectQemu as defaultDetectQemu } from './detector';
+import {
+  closeAllSpiceProxies as defaultCloseAllSpiceProxies,
+  closeSpiceProxy as defaultCloseSpiceProxy,
+  ensureSpiceProxy as defaultEnsureSpiceProxy,
+} from './spice-proxy';
 
 interface VMProcess {
   id: string;
@@ -19,6 +24,9 @@ interface VMConfig {
   disk: string;
   qmpSocket?: string;
   accelerator?: string;
+  installMediaPath?: string;
+  bootOrder?: 'disk-first' | 'cdrom-first';
+  networkType?: 'nat' | 'bridge';
 }
 
 const runningVMs = new Map<string, VMProcess>();
@@ -27,6 +35,9 @@ const displaySessions = new Map<string, DisplaySession>();
 let spawnFn = defaultSpawn;
 let connectQMPFn = defaultConnectQMP;
 let detectQemuFn = defaultDetectQemu;
+let ensureSpiceProxyFn = defaultEnsureSpiceProxy;
+let closeSpiceProxyFn = defaultCloseSpiceProxy;
+let closeAllSpiceProxiesFn = defaultCloseAllSpiceProxies;
 
 export function setSpawnFn(fn: typeof defaultSpawn): void {
   spawnFn = fn;
@@ -40,10 +51,32 @@ export function setDetectQemuFn(fn: typeof defaultDetectQemu): void {
   detectQemuFn = fn;
 }
 
+export function setSpiceProxyFnsForTests(
+  fns: Partial<{
+    ensure: typeof defaultEnsureSpiceProxy;
+    close: typeof defaultCloseSpiceProxy;
+    closeAll: typeof defaultCloseAllSpiceProxies;
+  }>,
+): void {
+  if (fns.ensure) {
+    ensureSpiceProxyFn = fns.ensure;
+  }
+  if (fns.close) {
+    closeSpiceProxyFn = fns.close;
+  }
+  if (fns.closeAll) {
+    closeAllSpiceProxiesFn = fns.closeAll;
+  }
+}
+
 export function resetRuntimeStateForTests(): void {
   runningVMs.clear();
   pausedVMs.clear();
   displaySessions.clear();
+  void closeAllSpiceProxiesFn();
+  ensureSpiceProxyFn = defaultEnsureSpiceProxy;
+  closeSpiceProxyFn = defaultCloseSpiceProxy;
+  closeAllSpiceProxiesFn = defaultCloseAllSpiceProxies;
 }
 
 export function resolveSpicePort(vmId: string): number {
@@ -62,6 +95,7 @@ function markDisplayDisconnected(vmId: string, reason: string): void {
     status: DisplaySessionStatus.Disconnected,
     lastError: reason,
   });
+  void closeSpiceProxyFn(vmId);
 }
 
 // For testing: allow passing config directly
@@ -110,6 +144,7 @@ export async function startVM(vmId: string, config?: VMConfig): Promise<{ vmId: 
       markDisplayDisconnected(vmId, 'VM exited');
       runningVMs.delete(vmId);
       pausedVMs.delete(vmId);
+      void closeSpiceProxyFn(vmId);
     });
 
     return { vmId, pid: qemuProcess.pid };
@@ -140,6 +175,7 @@ export async function stopVM(vmId: string): Promise<{ vmId: string; success: boo
     runningVMs.delete(vmId);
     pausedVMs.delete(vmId);
     markDisplayDisconnected(vmId, 'VM stopped');
+    await closeSpiceProxyFn(vmId);
     return { vmId, success: true };
   } catch (err) {
     throw new Error(`Failed to stop VM: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -187,10 +223,28 @@ function buildQemuArgs(config: VMConfig): string[] {
   const args: string[] = [
     '-m', config.memory.toString(),
     '-smp', `cores=${config.cores}`,
-    '-hda', config.disk,
+    '-drive', `file=${config.disk},if=virtio,format=qcow2`,
     '-display', 'none',
     '-spice', `port=${spicePort},addr=127.0.0.1,disable-ticketing=on`,
   ];
+
+  if (config.installMediaPath) {
+    args.push('-drive', `file=${config.installMediaPath},media=cdrom,readonly=on`);
+  }
+
+  const bootOrder = config.bootOrder || 'disk-first';
+  if (bootOrder === 'cdrom-first' && config.installMediaPath) {
+    args.push('-boot', 'order=dc,menu=on');
+  } else {
+    args.push('-boot', 'order=cd,menu=on');
+  }
+
+  args.push(
+    '-netdev',
+    `user,id=net0${config.networkType === 'bridge' ? ',ipv6=on' : ''}`,
+    '-device',
+    'virtio-net-pci,netdev=net0',
+  );
 
   if (config.accelerator) {
     args.push('-accel', config.accelerator);
@@ -235,8 +289,10 @@ export async function openDisplaySession(vmId: string): Promise<DisplaySession> 
   const existing = displaySessions.get(vmId);
   if (existing) {
     if (existing.status === DisplaySessionStatus.Disconnected || existing.status === DisplaySessionStatus.Error) {
+      const websocketUri = await ensureSpiceProxyFn(vmId, '127.0.0.1', vm.spicePort);
       const next: DisplaySession = {
         ...existing,
+        websocketUri,
         status: DisplaySessionStatus.Connected,
         reconnectAttempts: existing.reconnectAttempts + 1,
         lastError: undefined,
@@ -247,12 +303,14 @@ export async function openDisplaySession(vmId: string): Promise<DisplaySession> 
     return existing;
   }
 
+  const websocketUri = await ensureSpiceProxyFn(vmId, '127.0.0.1', vm.spicePort);
   const session: DisplaySession = {
     vmId,
     protocol: DisplayProtocol.Spice,
     host: '127.0.0.1',
     port: vm.spicePort,
     uri: `spice://127.0.0.1:${vm.spicePort}`,
+    websocketUri,
     status: DisplaySessionStatus.Connected,
     reconnectAttempts: 0,
   };
@@ -265,7 +323,7 @@ export function getDisplaySession(vmId: string): DisplaySession | null {
   return displaySessions.get(vmId) || null;
 }
 
-export function closeDisplaySession(vmId: string): { success: boolean } {
+export async function closeDisplaySession(vmId: string): Promise<{ success: boolean }> {
   const existing = displaySessions.get(vmId);
   if (!existing) {
     return { success: true };
@@ -276,5 +334,6 @@ export function closeDisplaySession(vmId: string): { success: boolean } {
     status: DisplaySessionStatus.Disconnected,
     lastError: 'Display session closed',
   });
+  await closeSpiceProxyFn(vmId);
   return { success: true };
 }
